@@ -1,0 +1,1084 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<title>申し送り</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex, nofollow">
+<link rel="icon" href="data:,">
+<style>
+  :root{
+    --bg:#f4f6f8; --card:#ffffff; --line:#dde3ea; --text:#1d2733; --sub:#67757f;
+    --main:#0f7b6c; --main-d:#0b5f54; --warn:#c0392b; --todo:#b7791f; --chip:#eef3f5;
+  }
+  *{box-sizing:border-box; -webkit-tap-highlight-color:transparent;}
+  body{margin:0; font-family:"Hiragino Kaku Gothic ProN","Meiryo",system-ui,sans-serif;
+       background:var(--bg); color:var(--text); font-size:16px; line-height:1.6;}
+  .hide{display:none !important;}
+  header{position:sticky; top:0; z-index:20; background:var(--main); color:#fff;
+         padding:10px 12px; display:flex; align-items:center; gap:8px;}
+  header .title{font-weight:700; font-size:16px; flex:1; overflow:hidden; white-space:nowrap; text-overflow:ellipsis;}
+  header .who{font-size:12px; opacity:.9; display:block; font-weight:400;}
+  header button{background:rgba(255,255,255,.18); color:#fff; border:0; border-radius:8px;
+                padding:8px 10px; font-size:14px; white-space:nowrap;}
+  .wrap{padding:10px 10px 96px;}
+  .card{background:var(--card); border:1px solid var(--line); border-radius:12px;
+        padding:12px; margin-bottom:10px;}
+  .card.tap:active{background:#f0f5f4;}
+  .meta{display:flex; align-items:center; gap:8px; font-size:13px; color:var(--sub); margin-bottom:6px; flex-wrap:wrap;}
+  .dot{width:9px; height:9px; border-radius:50%; background:var(--main); flex:none;}
+  .body{white-space:pre-wrap; word-break:break-word;}
+  .chips{display:flex; flex-wrap:wrap; gap:6px; margin-top:8px;}
+  .chip{background:var(--chip); color:#3d4f5c; border-radius:6px; padding:3px 8px; font-size:12px;}
+  .chip.user{background:#e6f0fb; color:#1a4f8a;}
+  .chip.todo{background:#fdf1dc; color:var(--todo); font-weight:700;}
+  .chip.high{background:#fdeaea; color:var(--warn); font-weight:700;}
+  .chip.fix{background:#f0ece6; color:#7a6448;}
+  .foot{margin-top:8px; font-size:12px; color:var(--sub); display:flex; gap:12px; flex-wrap:wrap;}
+  .more{width:100%; padding:14px; border:1px dashed var(--line); background:#fff; color:var(--main);
+        border-radius:12px; font-size:15px; font-weight:700;}
+  .fab{position:fixed; right:16px; bottom:20px; z-index:30; width:60px; height:60px; border-radius:50%;
+       background:var(--main); color:#fff; border:0; font-size:30px; box-shadow:0 4px 14px rgba(0,0,0,.25);}
+  .page{position:fixed; inset:0; background:var(--bg); z-index:40; overflow-y:auto;}
+  #resultPage{z-index:45;}
+  #detailPage{z-index:50;}
+  .page .inner{padding:12px 12px 40px;}
+  label{display:block; font-size:13px; color:var(--sub); margin:12px 0 4px;}
+  input,select,textarea{width:100%; padding:12px; font-size:16px; border:1px solid var(--line);
+                        border-radius:10px; background:#fff; font-family:inherit;}
+  textarea{min-height:150px; resize:vertical;}
+  .btn{display:block; width:100%; padding:15px; background:var(--main); color:#fff; border:0;
+       border-radius:10px; font-size:17px; font-weight:700; margin-top:16px;}
+  .btn:active{background:var(--main-d);}
+  .btn:disabled{opacity:.6;}
+  .btn.sub{background:#fff; color:var(--main); border:1px solid var(--main);}
+  .btn.gray{background:#fff; color:var(--sub); border:1px solid var(--line);}
+  .btn.danger{background:#fff; color:var(--warn); border:1px solid #f0c6c1;}
+  .row{display:flex; gap:8px;} .row>*{flex:1;}
+  details.opt{margin-top:14px; border:1px solid var(--line); border-radius:10px; background:#fff; padding:10px 12px;}
+  details.opt summary{color:var(--main); font-weight:700; cursor:pointer;}
+  .msg{padding:10px 12px; border-radius:8px; margin:10px 0; font-size:14px; display:none;}
+  .msg.err{background:#fdeaea; color:var(--warn); display:block;}
+  .msg.ok{background:#e7f4ef; color:var(--main-d); display:block;}
+  .empty{text-align:center; color:var(--sub); padding:40px 10px;}
+  .blk{border-left:4px solid var(--line); padding:2px 0 2px 12px; margin:14px 0;}
+  .blk.fix{border-color:var(--todo);} .blk.add{border-color:var(--main);}
+  .blk h4{margin:0 0 4px; font-size:14px;}
+  .list-item{background:#fff; border:1px solid var(--line); border-radius:10px; padding:10px 12px; margin-bottom:8px; font-size:14px;}
+  .sp{height:8px;}
+  .loading{text-align:center; padding:20px; color:var(--sub);}
+  h2{font-size:18px; margin:6px 0 0;}
+  .note{font-size:12px; color:var(--sub); margin-top:6px;}
+  .count{font-size:12px; color:var(--warn); text-align:right; margin-top:4px;}
+  .check{display:flex; align-items:center; gap:8px; font-size:14px; color:var(--text); margin-top:14px;}
+  .check input{width:auto; margin:0;}
+  .adm-tabs{display:flex; gap:6px; overflow-x:auto; margin:10px 0;}
+  .adm-tabs button{white-space:nowrap; border:1px solid var(--line); background:#fff; color:var(--sub);
+                   border-radius:999px; padding:6px 12px; font-size:13px;}
+  .adm-tabs button.on{background:var(--main); color:#fff; border-color:var(--main);}
+  table{width:100%; border-collapse:collapse; font-size:12px; background:#fff;}
+  td,th{border:1px solid var(--line); padding:5px; text-align:left; vertical-align:top;}
+</style>
+</head>
+<body>
+
+<!-- ========== ログイン ========== -->
+<div id="loginPage" class="page">
+  <div class="inner" style="max-width:420px; margin:0 auto; padding-top:48px;">
+    <h2 id="loginTitle" style="text-align:center; margin-bottom:4px;">申し送り</h2>
+    <p style="text-align:center; color:var(--sub); font-size:14px; margin-top:0;">職員名を選び、PINを入力してください</p>
+    <div id="loginMsg" class="msg"></div>
+    <label>職員名</label>
+    <select id="loginUser"></select>
+    <label>PIN（4〜8桁の数字）</label>
+    <input id="loginPin" type="password" inputmode="numeric" pattern="[0-9]*" maxlength="8" autocomplete="off">
+    <label class="check">
+      <input type="checkbox" id="loginMine">この端末は自分専用（次回から自動でログイン）
+    </label>
+    <div class="note">事務所など複数人で使う端末では、チェックを外したままにしてください。しばらく操作がないと自動でログアウトします。</div>
+    <button class="btn" id="loginBtn" onclick="doLogin()">ログイン</button>
+  </div>
+</div>
+
+<!-- ========== 一覧 ========== -->
+<div id="main" class="hide">
+  <header>
+    <div class="title"><span id="hdTitle">申し送り</span><span class="who" id="hdWho"></span></div>
+    <button onclick="openSearch()">🔍 検索</button>
+    <button onclick="openMenu()">≡</button>
+  </header>
+  <div class="wrap">
+    <div id="listMsg" class="msg"></div>
+    <div id="list"></div>
+    <div id="listLoading" class="loading hide">読み込み中…</div>
+    <button id="moreBtn" class="more hide" onclick="loadMore()">さらに読み込む</button>
+  </div>
+  <button class="fab" onclick="openPost()">＋</button>
+</div>
+
+<!-- ========== 投稿 ========== -->
+<div id="postPage" class="page hide">
+  <header>
+    <button onclick="closePage('postPage')">← 戻る</button>
+    <div class="title">申し送りを書く</div>
+  </header>
+  <div class="inner">
+    <div id="postMsg" class="msg"></div>
+    <textarea id="postBody" placeholder="ここに申し送りを入力…" oninput="countBody()"></textarea>
+    <div id="postCount" class="count"></div>
+    <details class="opt">
+      <summary>＋ 詳しく（任意）</summary>
+      <label>利用者</label>
+      <select id="postUser"><option value="">（指定しない）</option></select>
+      <label>分類</label>
+      <select id="postCat"><option value="">（指定しない）</option></select>
+      <div class="row">
+        <div>
+          <label>重要度</label>
+          <select id="postLevel"><option>ふつう</option><option>高</option><option>低</option></select>
+        </div>
+        <div>
+          <label>勤務帯</label>
+          <select id="postShift"><option value="">自動</option><option>日勤</option><option>夜勤</option></select>
+        </div>
+      </div>
+      <label class="check"><input type="checkbox" id="postTodo">対応が必要</label>
+      <label>対応期限</label>
+      <input id="postDue" type="date">
+    </details>
+    <label>写真・動画（あとから追加もできます）</label>
+    <input id="postFiles" type="file" accept="image/*,video/*" multiple onchange="ファイルを選んだ()">
+    <div id="postFileList" class="note"></div>
+    <div id="postProgress" class="note"></div>
+    <button class="btn" id="postBtn" onclick="doPost()">送信する</button>
+  </div>
+</div>
+
+<!-- ========== 詳細 ========== -->
+<div id="detailPage" class="page hide">
+  <header>
+    <button onclick="closeDetail()">← 戻る</button>
+    <div class="title">申し送りの詳細</div>
+  </header>
+  <div class="inner">
+    <div id="detailMsg" class="msg"></div>
+    <div id="detailBody"></div>
+  </div>
+</div>
+
+<!-- ========== 検索 ========== -->
+<div id="searchPage" class="page hide">
+  <header>
+    <button onclick="closePage('searchPage')">← 戻る</button>
+    <div class="title">検索</div>
+  </header>
+  <div class="inner">
+    <label>記載者</label>
+    <select id="sUser"><option value="">（すべて）</option></select>
+    <label>利用者</label>
+    <select id="sTarget"><option value="">（すべて）</option></select>
+    <label>期間</label>
+    <div class="row"><input id="sFrom" type="date"><input id="sTo" type="date"></div>
+    <div class="row" style="margin-top:8px;">
+      <button class="btn gray" style="margin:0; padding:10px; font-size:14px;" onclick="quickRange(0)">今日</button>
+      <button class="btn gray" style="margin:0; padding:10px; font-size:14px;" onclick="quickRange(1)">昨日</button>
+      <button class="btn gray" style="margin:0; padding:10px; font-size:14px;" onclick="quickRange(7)">1週間</button>
+      <button class="btn gray" style="margin:0; padding:10px; font-size:14px;" onclick="quickRange(90)">3か月</button>
+    </div>
+    <label>本文キーワード</label>
+    <input id="sWord" type="text" placeholder="例：嘔吐">
+    <div class="row">
+      <div><label>勤務帯</label><select id="sShift"><option value="">すべて</option><option>日勤</option><option>夜勤</option></select></div>
+      <div><label>重要度</label><select id="sLevel"><option value="">すべて</option><option>高</option><option>ふつう</option><option>低</option></select></div>
+    </div>
+    <label>分類</label>
+    <select id="sCat"><option value="">（すべて）</option></select>
+    <label>状態</label>
+    <select id="sState"><option value="">すべて</option><option value="未対応">未対応のみ</option><option value="対応済み">対応済みのみ</option></select>
+    <label class="check"><input type="checkbox" id="sUnread">自分がまだ確認していないものだけ</label>
+    <button class="btn" id="searchBtn" onclick="doSearch()">検索する</button>
+    <button class="btn gray" onclick="clearSearch()">条件をクリア</button>
+  </div>
+</div>
+
+<!-- ========== 検索結果 ========== -->
+<div id="resultPage" class="page hide">
+  <header>
+    <button onclick="closePage('resultPage')">← 戻る</button>
+    <div class="title" id="resultTitle">検索結果</div>
+  </header>
+  <div class="inner">
+    <div id="resultMsg" class="msg"></div>
+    <div id="resultList"></div>
+  </div>
+</div>
+
+<!-- ========== メニュー ========== -->
+<div id="menuPage" class="page hide">
+  <header>
+    <button onclick="closePage('menuPage')">← 戻る</button>
+    <div class="title">メニュー</div>
+  </header>
+  <div class="inner">
+    <div class="card"><b id="menuName"></b><div style="color:var(--sub); font-size:13px;" id="menuRole"></div></div>
+    <button class="btn sub" id="adminBtn" onclick="openAdmin()">管理画面</button>
+    <button class="btn gray" onclick="doLogout()">ログアウト（職員を切り替える）</button>
+  </div>
+</div>
+
+<!-- ========== 管理 ========== -->
+<div id="adminPage" class="page hide">
+  <header>
+    <button onclick="closePage('adminPage')">← 戻る</button>
+    <div class="title">管理画面</div>
+  </header>
+  <div class="inner">
+    <div class="adm-tabs">
+      <button data-adm="staff" class="on" onclick="setAdm('staff')">職員</button>
+      <button data-adm="user" onclick="setAdm('user')">利用者</button>
+      <button data-adm="qr" onclick="setAdm('qr')">QRカード</button>
+      <button data-adm="hidden" onclick="setAdm('hidden')">非表示一覧</button>
+      <button data-adm="log" onclick="setAdm('log')">監査ログ</button>
+      <button data-adm="err" onclick="setAdm('err')">エラー</button>
+      <button data-adm="csv" onclick="setAdm('csv')">CSV出力</button>
+    </div>
+    <div id="admMsg" class="msg"></div>
+    <div id="admBody"></div>
+  </div>
+</div>
+
+<script>
+// 申し送りのデータを預かっている場所（Googleのスプレッドシート側）
+var データの置き場 = 'https://script.google.com/macros/s/AKfycbxhpt8W_xOsgFBy7jQl3cYCMOsV8UsTS_zjzfZJuwgh08N8RB7B9UVIsyjjLZgsmvI/exec';
+// QRカードから開いたときは、URLの ?k= に合言葉が入っている
+var 埋込QRキー = (function(){
+  var m = String(location.search || '').match(/[?&]k=([A-Za-z0-9]{16,64})/);
+  return m ? m[1] : '';
+})();
+// 最初の1往復でまとめてもらう
+var 埋込データ = null;
+
+// ===== 保存領域（使えない環境でも落ちないようにする）=====
+var 記憶 = (function(){
+  var 使える = false, 控え = {};
+  try { localStorage.setItem('__t','1'); localStorage.removeItem('__t'); 使える = true; } catch(e){ 使える = false; }
+  return {
+    get: function(k){ try { return 使える ? localStorage.getItem(k) : (控え[k]||null); } catch(e){ return 控え[k]||null; } },
+    set: function(k,v){ try { 使える ? localStorage.setItem(k,v) : (控え[k]=v); } catch(e){ 控え[k]=v; } },
+    del: function(k){ try { 使える ? localStorage.removeItem(k) : delete 控え[k]; } catch(e){ delete 控え[k]; } }
+  };
+})();
+
+/**
+ * サーバーへのお願いは、すべてここを通る。
+ * Content-Type を text/plain にしているのは、そうしないとブラウザが
+ * 事前確認（preflight）を出し、Googleがそれに答えないため弾かれるから。
+ */
+function call(fn){
+  var args = Array.prototype.slice.call(arguments,1);
+  return fetch(データの置き場, {
+    method: 'POST',
+    headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+    body: JSON.stringify({ 関数: fn, 引数: args })
+  }).then(function(r){
+    if(!r.ok) throw new Error('つながりませんでした（' + r.status + '）');
+    return r.json();
+  }).then(function(j){
+    if(j && j.ok) return j.結果;
+    throw new Error((j && j.訳) || '処理できませんでした');
+  });
+}
+function show(id, text, type){
+  var el = document.getElementById(id);
+  el.className = 'msg ' + (type||'err');
+  el.textContent = text || '';
+  if(!text) el.className='msg';
+}
+function esc(s){ return String(s==null?'':s).replace(/[&<>"']/g, function(c){
+  return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]; }); }
+function safeId(s){ return /^[A-Za-z0-9\-]+$/.test(String(s)) ? String(s) : ''; }
+function uuid(){
+  return 'r-' + Date.now().toString(36) + '-' + Math.random().toString(36).slice(2,10);
+}
+/** セッション切れならログイン画面へ戻す */
+function 切れた(e){
+  var m = (e && e.message) || '';
+  if(/ログインしてください|有効期限|操作がなかった|利用停止/.test(m)){
+    記憶.del('ms_token');
+    location.reload();
+    return true;
+  }
+  return false;
+}
+
+var ST = { token:null, me:null, conf:null, users:[], staff:[], tab:'all', cursor:null, busy:false, detailId:null };
+
+window.addEventListener('load', function(){
+  // 画面はもう出ている。ここから1往復だけして中身を入れる
+  var 覚えているtoken = 記憶.get('ms_token') || '';
+  if(埋込QRキー || 覚えているtoken){
+    show('loginMsg', '読み込んでいます…', 'ok');
+  }
+  call('初期表示', 埋込QRキー, 覚えているtoken).then(function(d){
+    埋込データ = d || null;
+    show('loginMsg','');
+    始める();
+  }).catch(function(e){
+    show('loginMsg', '読み込めませんでした：' + ((e && e.message) || '') + '　もう一度開き直してください');
+  });
+});
+
+function 始める(){
+  // ①QRカードから開いた場合＝サーバー側でログインまで済ませてある
+  if(埋込データ && 埋込データ.ログイン){
+    ST.token = 埋込データ.ログイン.token;
+    記憶.set('ms_token', ST.token);
+    afterLogin(埋込データ.ログイン, 埋込データ.先読み);
+    return;
+  }
+  // ②QRで入れなかった場合は、理由を出してふつうのログイン画面へ
+  if(埋込データ && 埋込データ.入れなかった){
+    記憶.del('ms_token');
+    showLogin();
+    show('loginMsg', 埋込データ.入れなかった);
+    return;
+  }
+  // ③前に入ったことがある端末＝確認と一覧取得をまとめて1往復で済ませる
+  // ③前に入ったことがある端末＝上の1往復でログイン済みの中身が返ってきている
+  ST.token = 記憶.get('ms_token');
+  if(ST.token && !(埋込データ && 埋込データ.ログイン)){
+    記憶.del('ms_token');
+    ST.token = null;
+  }
+  showLogin();
+}
+
+function 職員名を並べる(r){
+  document.getElementById('loginTitle').textContent = r.施設名 + '　申し送り';
+  document.getElementById('loginUser').innerHTML =
+    r.職員.map(function(s){ return '<option value="'+esc(s.id)+'">'+esc(s.氏名)+'</option>'; }).join('');
+}
+function showLogin(静かに){
+  if(!静かに){
+    document.getElementById('loginPage').classList.remove('hide');
+    document.getElementById('main').classList.add('hide');
+  }
+  // 職員名はページに埋め込んである。サーバーへ聞きに行かないぶん、すぐ出る
+  if(埋込データ && 埋込データ.職員 && 埋込データ.職員.length){ 職員名を並べる(埋込データ); return; }
+  call('職員一覧').then(職員名を並べる)
+    .catch(function(e){ show('loginMsg', (e && e.message) || '読み込みに失敗しました'); });
+}
+
+function doLogin(){
+  var id = document.getElementById('loginUser').value;
+  var pin = document.getElementById('loginPin').value;
+  var mine = document.getElementById('loginMine').checked;
+  if(!/^\d{4,8}$/.test(pin)){ show('loginMsg','PINは4〜8桁の数字です'); return; }
+  var btn = document.getElementById('loginBtn');
+  btn.disabled = true; btn.textContent = '確認中…';
+  show('loginMsg','');
+  call('ログイン', id, pin, mine).then(function(r){
+    btn.disabled = false; btn.textContent = 'ログイン';
+    ST.token = r.token;
+    記憶.set('ms_token', r.token);
+    document.getElementById('loginPin').value='';
+    afterLogin(r);
+  }).catch(function(e){
+    btn.disabled = false; btn.textContent = 'ログイン';
+    show('loginMsg', (e && e.message) || 'ログインできませんでした');
+  });
+}
+
+function afterLogin(r, 先読み){
+  ST.me = r.職員; ST.conf = r.設定;
+  document.getElementById('loginPage').classList.add('hide');
+  document.getElementById('main').classList.remove('hide');
+  document.getElementById('hdTitle').textContent = r.設定.施設名;
+  document.getElementById('hdWho').textContent = r.職員.氏名 + ' さん';
+  document.getElementById('menuName').textContent = r.職員.氏名;
+  document.getElementById('menuRole').textContent = r.職員.権限;
+  document.getElementById('adminBtn').classList.toggle('hide', r.職員.権限 !== '管理者');
+  document.getElementById('postCat').innerHTML = '<option value="">（指定しない）</option>' +
+    r.設定.分類.map(function(c){ return '<option>'+esc(c)+'</option>'; }).join('');
+  document.getElementById('sCat').innerHTML = '<option value="">（すべて）</option>' +
+    r.設定.分類.map(function(c){ return '<option>'+esc(c)+'</option>'; }).join('');
+  function 利用者を並べる(us){
+    ST.users = us || [];
+    document.getElementById('postUser').innerHTML = '<option value="">（指定しない）</option>' +
+      ST.users.filter(function(u){return u.在籍==='在籍';})
+        .map(function(u){ return '<option value="'+esc(u.id)+'">'+esc(u.氏名)+(u.部屋?'（'+esc(u.部屋)+'）':'')+'</option>'; }).join('');
+    document.getElementById('sTarget').innerHTML = '<option value="">（すべて）</option>' +
+      ST.users.map(function(u){ return '<option value="'+esc(u.id)+'">'+esc(u.氏名)+'</option>'; }).join('');
+  }
+  function 職員を並べる(list){
+    ST.staff = list || [];
+    document.getElementById('sUser').innerHTML = '<option value="">（すべて）</option>' +
+      ST.staff.map(function(s){ return '<option value="'+esc(s.id)+'">'+esc(s.氏名)+'</option>'; }).join('');
+  }
+  // 先読みが付いてきていれば、サーバーへ聞き直さない（起動が速くなる）
+  if(先読み){
+    利用者を並べる(先読み.利用者);
+    職員を並べる(先読み.職員);
+    if(先読み.一覧){ 一覧を描く(先読み.一覧); } else { reload(); }
+    return;
+  }
+  call('利用者一覧', ST.token).then(利用者を並べる).catch(function(){});
+  call('職員一覧').then(function(r2){ 職員を並べる(r2.職員); }).catch(function(){});
+  reload();
+}
+
+function doLogout(){
+  call('ログアウト', ST.token).catch(function(){}).then(function(){
+    記憶.del('ms_token');
+    location.reload();
+  });
+}
+
+// ===== 一覧 =====
+function setTab(t){ ST.tab = t || 'all'; reload(); }
+function reload(){
+  ST.cursor = null;
+  document.getElementById('list').innerHTML = '';
+  document.getElementById('moreBtn').classList.add('hide');
+  loadMore();
+}
+function loadMore(){
+  if(ST.busy) return;
+  ST.busy = true;
+  document.getElementById('listLoading').classList.remove('hide');
+  call('一覧取得', ST.token, { cursor: ST.cursor, tab: ST.tab }).then(一覧を描く).catch(function(e){
+    ST.busy = false;
+    document.getElementById('listLoading').classList.add('hide');
+    if(切れた(e)) return;
+    show('listMsg', (e && e.message) || '読み込みに失敗しました');
+  });
+}
+function 一覧を描く(r){
+  ST.busy = false;
+  document.getElementById('listLoading').classList.add('hide');
+  show('listMsg','');
+  var box = document.getElementById('list');
+  if(!r.items.length && !ST.cursor){
+    box.innerHTML = '<div class="empty">申し送りはまだありません。<br>右下の「＋」から書けます。</div>';
+  } else {
+    box.insertAdjacentHTML('beforeend', r.items.map(cardHtml).join(''));
+  }
+  ST.cursor = r.next;
+  document.getElementById('moreBtn').classList.toggle('hide', !r.next);
+}
+
+function cardHtml(d){
+  var chips = '';
+  if(d.利用者名) chips += '<span class="chip user">'+esc(d.利用者名)+'</span>';
+  if(d.分類) chips += '<span class="chip">'+esc(d.分類)+'</span>';
+  if(d.重要度==='高') chips += '<span class="chip high">重要</span>';
+  if(d.要対応) chips += '<span class="chip todo">'+(d.対応状況==='対応済み'?'対応済み':'要対応')+'</span>';
+  if(d.訂正一致) chips += '<span class="chip fix">訂正・追記が一致</span>';
+  if(d.添付数) chips += '<span class="chip">📎写真・動画'+d.添付数+'</span>';
+  var body = String(d.本文||'');
+  var short = body.length > 90 ? body.slice(0,90)+'…' : body;
+  var id = safeId(d.id);
+  return '<div class="card tap" onclick="openDetail(\''+id+'\')">'
+    + '<div class="meta">'
+    + (d.自分既読 ? '' : '<span class="dot"></span>')
+    + '<span>'+esc(d.投稿日時)+'</span><span>'+esc(d.勤務帯)+'</span><span>'+esc(d.記載者名)+'</span></div>'
+    + '<div class="body">'+esc(short)+'</div>'
+    + (chips ? '<div class="chips">'+chips+'</div>' : '')
+    + '<div class="foot"><span>✔確認 '+(d.既読数||0)+'人</span>'
+    + (d.子件数 ? '<span>💬訂正・追記 '+d.子件数+'件</span>' : '') + '</div></div>';
+}
+window.addEventListener('scroll', function(){
+  if(document.getElementById('main').classList.contains('hide')) return;
+  if(!ST.cursor || ST.busy) return;
+  if(window.innerHeight + window.scrollY >= document.body.offsetHeight - 300) loadMore();
+});
+
+// ===== 投稿 =====
+var 受付ID = null;
+function openPost(){
+  document.getElementById('postBody').value='';
+  document.getElementById('postCount').textContent='';
+  show('postMsg','');
+  受付ID = uuid();
+  document.getElementById('postPage').classList.remove('hide');
+  setTimeout(function(){ document.getElementById('postBody').focus(); }, 100);
+}
+function closePage(id){ document.getElementById(id).classList.add('hide'); }
+function countBody(){
+  var 上限 = (ST.conf && ST.conf.本文上限) || 5000;
+  var n = document.getElementById('postBody').value.length;
+  var el = document.getElementById('postCount');
+  el.textContent = (n > 上限 - 500) ? ('あと ' + (上限 - n) + ' 文字') : '';
+}
+function doPost(){
+  var body = document.getElementById('postBody').value;
+  var 上限 = (ST.conf && ST.conf.本文上限) || 5000;
+  if(!body.trim()){ show('postMsg','申し送りの内容を入力してください'); return; }
+  if(body.length > 上限){ show('postMsg','本文が長すぎます（'+body.length+'文字／上限'+上限+'文字）'); return; }
+  var btn = document.getElementById('postBtn');
+  btn.disabled = true; btn.textContent = '送信中…';
+  call('投稿', ST.token, {
+    本文: body,
+    利用者ID: document.getElementById('postUser').value,
+    分類: document.getElementById('postCat').value,
+    重要度: document.getElementById('postLevel').value,
+    勤務帯: document.getElementById('postShift').value,
+    要対応: document.getElementById('postTodo').checked,
+    対応期限: document.getElementById('postDue').value
+  }, 受付ID).then(function(id){
+    btn.textContent='写真・動画を送信中…';
+    return 添付をまとめて送る(id);
+  }).then(function(){
+    btn.disabled=false; btn.textContent='送信する';
+    document.getElementById('postUser').value='';
+    document.getElementById('postCat').value='';
+    document.getElementById('postTodo').checked=false;
+    document.getElementById('postDue').value='';
+    document.getElementById('postBody').value='';
+    closePage('postPage');
+    reload();
+    window.scrollTo(0,0);
+  }).catch(function(e){
+    btn.disabled=false; btn.textContent='送信する';
+    if(切れた(e)) return;
+    show('postMsg', ((e && e.message) || '送信できませんでした')
+      + '　※入力内容は残っています。もう一度「送信する」を押しても二重登録にはなりません。');
+  });
+}
+
+// ===== 詳細 =====
+function openDetail(id){
+  id = safeId(id);
+  if(!id) return;
+  ST.detailId = id;
+  document.getElementById('detailBody').innerHTML = '<div class="loading">読み込み中…</div>';
+  show('detailMsg','');
+  document.getElementById('detailPage').classList.remove('hide');
+  call('詳細取得', ST.token, id).then(function(r){
+    ST.detailId = r.本体.id;
+    renderDetail(r);
+    if(!r.自分既読) call('既読にする', ST.token, r.本体.id).catch(function(){});
+  }).catch(function(e){
+    if(切れた(e)) return;
+    document.getElementById('detailBody').innerHTML = '';
+    show('detailMsg', (e && e.message) || '読み込みに失敗しました');
+  });
+}
+function closeDetail(){ closePage('detailPage'); reload(); }
+function renderDetail(r){
+  var d = r.本体;
+  var h = '<div class="card"><div class="blk"><h4>【元の記載】'+esc(d.投稿日時full)+'　'+esc(d.記載者名)+'（'+esc(d.勤務帯)+'）</h4>'
+        + '<div class="body">'+esc(d.本文)+'</div>';
+  var chips='';
+  if(d.利用者名) chips += '<span class="chip user">'+esc(d.利用者名)+'</span>';
+  if(d.分類) chips += '<span class="chip">'+esc(d.分類)+'</span>';
+  if(d.重要度==='高') chips += '<span class="chip high">重要</span>';
+  if(d.要対応) chips += '<span class="chip todo">'+(d.対応状況==='対応済み'?'対応済み '+esc(d.対応情報):'要対応'+(d.対応期限?'（期限 '+esc(d.対応期限)+'）':''))+'</span>';
+  if(chips) h += '<div class="chips">'+chips+'</div>';
+  if(r.修正回数) h += '<div class="note">※この記録は投稿直後に'+r.修正回数+'回修正されています（変更前の全文は版履歴に保存）</div>';
+  h += '</div>';
+  r.子.forEach(function(c){
+    h += '<div class="blk '+(c.種別==='訂正'?'fix':'add')+'"><h4>【'+esc(c.種別)+'】'+esc(c.投稿日時full)+'　'+esc(c.記載者名)+'</h4>'
+       + '<div class="body">'+esc(c.本文)+'</div></div>';
+  });
+  h += '<div class="foot" style="margin-top:12px;">✔確認済み：'
+     + (r.既読者.length ? r.既読者.map(function(x){return esc(x.氏名);}).join('・') + '（'+r.既読者.length+'人）' : 'まだいません')
+     + '</div></div>';
+
+  h += '<button class="btn sub" onclick="openAddBox(\'追記\')">追記する</button>';
+  h += '<button class="btn sub" onclick="openAddBox(\'訂正\')">訂正する</button>';
+  if(d.要対応 && d.対応状況 !== '対応済み')
+    h += '<button class="btn" id="doneBtn" onclick="doDone()">対応済みにする</button>';
+  if(r.自己修正可)
+    h += '<button class="btn gray" onclick="openSelfEdit()">自分の記載を修正する（投稿直後のみ）</button>';
+  if(r.管理者)
+    h += '<button class="btn danger" onclick="doHide()">非表示にする（管理者）</button>';
+  h += '<div id="添付欄" style="margin-top:14px;"></div>';
+  h += '<div id="addBox" class="hide" style="margin-top:16px;">'
+     + '<label id="addLabel">追記</label><textarea id="addBody" style="min-height:110px;"></textarea>'
+     + '<button class="btn" id="addBtn" onclick="doAdd()">保存する</button></div>';
+  document.getElementById('detailBody').innerHTML = h;
+  if(ST.detailId) 添付を描く(ST.detailId);
+}
+var addMode = '追記', 追記受付ID = null;
+function openAddBox(mode){
+  addMode = mode;
+  追記受付ID = uuid();
+  document.getElementById('addLabel').textContent = mode==='訂正'
+    ? '訂正の内容（元の記載はそのまま残ります）' : '追記の内容';
+  document.getElementById('addBox').classList.remove('hide');
+  document.getElementById('addBody').focus();
+}
+function doAdd(){
+  var t = document.getElementById('addBody').value;
+  if(!t.trim()){ show('detailMsg','内容を入力してください'); return; }
+  var btn = document.getElementById('addBtn');
+  btn.disabled = true; btn.textContent = '保存中…';
+  call('追記', ST.token, ST.detailId, addMode, t, 追記受付ID)
+    .then(function(){ openDetail(ST.detailId); })
+    .catch(function(e){
+      btn.disabled = false; btn.textContent = '保存する';
+      if(切れた(e)) return;
+      show('detailMsg', (e && e.message) || '保存できませんでした');
+    });
+}
+function doDone(){
+  var btn = document.getElementById('doneBtn');
+  if(btn){ btn.disabled = true; btn.textContent = '処理中…'; }
+  call('対応済みにする', ST.token, ST.detailId)
+    .then(function(r){
+      if(r && r.済み) show('detailMsg','すでに他の職員が対応済みにしています（'+esc(r.対応者)+'）','ok');
+      openDetail(ST.detailId);
+    })
+    .catch(function(e){ if(!切れた(e)) show('detailMsg', (e && e.message)); });
+}
+function openSelfEdit(){
+  var t = prompt('修正後の内容を入力してください（変更前の文は履歴として保存されます）', '');
+  if(t===null || !t.trim()) return;
+  call('自己修正', ST.token, ST.detailId, t)
+    .then(function(){ openDetail(ST.detailId); })
+    .catch(function(e){ if(!切れた(e)) show('detailMsg', (e && e.message)); });
+}
+function doHide(){
+  var r = prompt('非表示にする理由を入力してください（記録は消えず、復元できます）');
+  if(r===null || !r.trim()) return;
+  call('管理_非表示にする', ST.token, ST.detailId, r)
+    .then(function(){ closeDetail(); })
+    .catch(function(e){ if(!切れた(e)) show('detailMsg', (e && e.message)); });
+}
+
+// ===== 検索 =====
+function openSearch(){ document.getElementById('searchPage').classList.remove('hide'); }
+function clearSearch(){
+  ['sUser','sTarget','sFrom','sTo','sWord','sShift','sLevel','sCat','sState'].forEach(function(id){
+    document.getElementById(id).value='';
+  });
+  document.getElementById('sUnread').checked=false;
+}
+function quickRange(days){
+  var t = new Date(), f = new Date();
+  if(days===1){ t.setDate(t.getDate()-1); f.setDate(f.getDate()-1); }
+  else f.setDate(f.getDate()-days);
+  var s = function(d){ return d.getFullYear()+'-'+('0'+(d.getMonth()+1)).slice(-2)+'-'+('0'+d.getDate()).slice(-2); };
+  document.getElementById('sFrom').value = s(f);
+  document.getElementById('sTo').value = s(t);
+}
+function doSearch(){
+  var cond = {
+    記載者ID: document.getElementById('sUser').value,
+    利用者ID: document.getElementById('sTarget').value,
+    開始日: document.getElementById('sFrom').value,
+    終了日: document.getElementById('sTo').value,
+    キーワード: document.getElementById('sWord').value,
+    勤務帯: document.getElementById('sShift').value,
+    重要度: document.getElementById('sLevel').value,
+    分類: document.getElementById('sCat').value,
+    対応状況: document.getElementById('sState').value,
+    未確認: document.getElementById('sUnread').checked
+  };
+  var btn = document.getElementById('searchBtn');
+  btn.disabled = true; btn.textContent = '検索中…';
+  document.getElementById('resultList').innerHTML = '<div class="loading">検索中…</div>';
+  document.getElementById('resultPage').classList.remove('hide');
+  call('検索', ST.token, cond).then(function(r){
+    btn.disabled = false; btn.textContent = '検索する';
+    document.getElementById('resultTitle').textContent = '検索結果 ' + r.items.length + '件';
+    document.getElementById('resultList').innerHTML = r.items.length
+      ? r.items.map(cardHtml).join('')
+      : '<div class="empty">条件に合う申し送りはありませんでした。</div>';
+    show('resultMsg', r.打ち切り ? '件数が多いため300件までを表示しています。条件を絞ってください。' : '', 'ok');
+  }).catch(function(e){
+    btn.disabled = false; btn.textContent = '検索する';
+    if(切れた(e)) return;
+    document.getElementById('resultList').innerHTML='';
+    show('resultMsg', (e && e.message) || '検索に失敗しました');
+  });
+}
+
+// ===== メニュー・管理 =====
+function openMenu(){ document.getElementById('menuPage').classList.remove('hide'); }
+function openAdmin(){ document.getElementById('adminPage').classList.remove('hide'); setAdm('staff'); }
+function setAdm(t){
+  Array.prototype.forEach.call(document.querySelectorAll('.adm-tabs button'), function(b){
+    b.classList.toggle('on', b.dataset.adm === t);
+  });
+  var box = document.getElementById('admBody');
+  box.innerHTML = '<div class="loading">読み込み中…</div>';
+  show('admMsg','');
+  var 失敗 = function(e){ if(!切れた(e)){ box.innerHTML=''; show('admMsg', (e && e.message)); } };
+
+  if(t==='staff') call('管理_職員一覧', ST.token).then(function(rows){
+    box.innerHTML = rows.map(function(s){
+      var id = esc(s.id);
+      return '<div class="list-item"><b>'+esc(s.氏名)+'</b>（'+esc(s.権限)+'／'+esc(s.在職)+'）'
+        + (s.ロック中 ? ' <span style="color:#c0392b">ロック中</span>' : '')
+        + '<div class="sp"></div>'
+        + '<button class="btn gray" style="margin:0; padding:8px; font-size:13px;" onclick="admPin(\''+id+'\')">PIN再発行</button>'
+        + '<div class="sp"></div>'
+        + '<button class="btn gray" style="margin:0; padding:8px; font-size:13px;" onclick="admStaff(\''+id+'\',\'在職\',\''+(s.在職==='在職'?'退職・異動':'在職')+'\')">'
+        + (s.在職==='在職' ? '退職・異動にする（ログイン不可）' : '在職に戻す') + '</button>'
+        + (s.ロック中 ? '<div class="sp"></div><button class="btn gray" style="margin:0; padding:8px; font-size:13px;" onclick="admUnlock(\''+id+'\')">ロック解除</button>' : '')
+        + '<div class="sp"></div>'
+        + '<button class="btn gray" style="margin:0; padding:8px; font-size:13px;" onclick="admQrReset(\''+id+'\')">QRを作り直す（今のカードが使えなくなります）</button>'
+        + '</div>';
+    }).join('') + '<button class="btn" onclick="admAddStaff()">職員を追加する</button>';
+  }).catch(失敗);
+
+  if(t==='user') call('利用者一覧', ST.token).then(function(rows){
+    box.innerHTML = rows.map(function(u){
+      return '<div class="list-item"><b>'+esc(u.氏名)+'</b>　'+esc(u.よみ||'')+'　'+esc(u.部屋||'')+'　'+esc(u.在籍)+'</div>';
+    }).join('') + '<button class="btn" onclick="admAddUser()">利用者を追加する</button>';
+  }).catch(失敗);
+
+  if(t==='hidden') call('管理_非表示一覧', ST.token).then(function(rows){
+    box.innerHTML = rows.length ? rows.map(function(d){
+      return '<div class="list-item"><div style="color:var(--sub); font-size:12px;">'+esc(d.投稿日時full)+'　'+esc(d.記載者名)+'</div>'
+        + '<div class="body">'+esc(d.本文)+'</div>'
+        + '<div style="color:var(--sub); font-size:12px; margin-top:6px;">'+esc(d.非表示情報)+'</div>'
+        + '<div class="sp"></div><button class="btn gray" style="margin:0; padding:8px; font-size:13px;" onclick="admRestore(\''+esc(safeId(d.id))+'\')">復元する</button></div>';
+    }).join('') : '<div class="empty">非表示にした記録はありません。</div>';
+  }).catch(失敗);
+
+  if(t==='log') call('管理_監査ログ', ST.token, 200).then(function(rows){
+    box.innerHTML = '<table><tr><th>日時</th><th>職員</th><th>操作</th><th>対象</th><th>備考</th></tr>'
+      + rows.map(function(r){
+        return '<tr><td>'+esc(r.日時)+'</td><td>'+esc(r.職員名)+'</td><td>'+esc(r.操作)+'</td><td>'+esc(r.対象)+'</td><td>'+esc(r.備考)+'</td></tr>';
+      }).join('') + '</table>';
+  }).catch(失敗);
+
+  if(t==='err') call('管理_エラー一覧', ST.token, 50).then(function(rows){
+    box.innerHTML = rows.length ? ('<table><tr><th>日時</th><th>種類</th><th>内容</th></tr>'
+      + rows.map(function(r){
+        return '<tr><td>'+esc(r.日時)+'</td><td>'+esc(r.種類)+'</td><td>'+esc(r.内容)+'</td></tr>';
+      }).join('') + '</table>') : '<div class="empty">エラーは記録されていません。</div>';
+  }).catch(失敗);
+
+  if(t==='qr') call('管理_職員一覧', ST.token).then(function(rows){
+    var 在職 = rows.filter(function(s){ return s.在職==='在職'; });
+    box.innerHTML = '<div class="note">QRカードは、読み取るだけで申し送りに入れる「鍵」です。'
+        + '本人だけが持つようにしてください。なくしたときは「職員」タブでそのかたのQRを作り直すと、'
+        + '前のカードはすぐ使えなくなります。</div>'
+      + 在職.map(function(s){
+          return '<label class="list-item" style="display:block;">'
+            + '<input type="checkbox" class="qrpick" value="'+esc(s.id)+'"> '
+            + '<b>'+esc(s.氏名)+'</b>（'+esc(s.権限)+'）</label>';
+        }).join('')
+      + '<button class="btn" onclick="admQrPdf(false)">選んだ人のカードをPDFで作る</button>'
+      + '<button class="btn gray" onclick="admQrPdf(true)">在職者ぜんぶのカードをPDFで作る</button>'
+      + '<div id="qrOut" style="margin-top:12px;"></div>';
+  }).catch(失敗);
+
+  if(t==='csv') box.innerHTML =
+      '<label>期間（空欄なら全期間）</label><div class="row"><input id="cFrom" type="date"><input id="cTo" type="date"></div>'
+    + '<button class="btn" onclick="admCsv()">CSVを作成する</button>'
+    + '<div id="csvOut" style="margin-top:12px;"></div>';
+}
+function admAddStaff(){
+  var n = prompt('職員の氏名'); if(!n) return;
+  var y = prompt('よみがな（ひらがな）','') || '';
+  var k = confirm('この職員を「管理者」にしますか？\nOK＝管理者／キャンセル＝一般職員') ? '管理者' : '一般';
+  var p = prompt(k === '管理者'
+    ? '初期PIN（6〜8桁の数字を推奨。管理者は削除やCSV出力ができるため長めに）'
+    : '初期PIN（4〜8桁の数字）'); if(!p) return;
+  call('管理_職員追加', ST.token, n, y, k, p)
+    .then(function(){ setAdm('staff'); show('admMsg','追加しました','ok'); })
+    .catch(function(e){ if(!切れた(e)) show('admMsg', (e && e.message)); });
+}
+function admAddUser(){
+  var n = prompt('利用者の氏名'); if(!n) return;
+  var y = prompt('よみがな（ひらがな）','') || '';
+  var r = prompt('部屋番号','') || '';
+  call('管理_利用者追加', ST.token, n, y, r)
+    .then(function(){ setAdm('user'); show('admMsg','追加しました','ok'); })
+    .catch(function(e){ if(!切れた(e)) show('admMsg', (e && e.message)); });
+}
+function admPin(id){
+  var p = prompt('新しいPIN（4〜8桁の数字。管理者は6桁以上を推奨）'); if(!p) return;
+  call('管理_PIN再発行', ST.token, id, p)
+    .then(function(){ show('admMsg','PINを再発行しました。旧ログインは無効になりました','ok'); })
+    .catch(function(e){ if(!切れた(e)) show('admMsg', (e && e.message)); });
+}
+function admStaff(id, k, v){
+  if(!confirm('この職員を「'+v+'」に変更します。よろしいですか？')) return;
+  call('管理_職員更新', ST.token, id, k, v)
+    .then(function(){ setAdm('staff'); show('admMsg','変更しました','ok'); })
+    .catch(function(e){ if(!切れた(e)) show('admMsg', (e && e.message)); });
+}
+function admUnlock(id){
+  call('管理_ロック解除', ST.token, id)
+    .then(function(){ setAdm('staff'); show('admMsg','ロックを解除しました','ok'); })
+    .catch(function(e){ if(!切れた(e)) show('admMsg', (e && e.message)); });
+}
+function admRestore(id){
+  if(!confirm('この記録を一覧に戻します。よろしいですか？')) return;
+  call('管理_復元', ST.token, id)
+    .then(function(){ setAdm('hidden'); show('admMsg','復元しました','ok'); })
+    .catch(function(e){ if(!切れた(e)) show('admMsg', (e && e.message)); });
+}
+
+// ===== 写真・動画 =====
+var 選んだファイル = [];
+
+function ファイルを選んだ(){
+  var 入 = document.getElementById('postFiles');
+  選んだファイル = Array.prototype.slice.call(入.files || []);
+  var box = document.getElementById('postFileList');
+  if(!選んだファイル.length){ box.textContent = ''; return; }
+  box.innerHTML = 選んだファイル.map(function(f){
+    return esc(f.name) + '（' + 大きさの表示(f.size) + '）';
+  }).join('<br>');
+}
+
+function 大きさの表示(n){
+  if(n >= 1024*1024) return (n/1024/1024).toFixed(1) + 'MB';
+  return Math.max(1, Math.round(n/1024)) + 'KB';
+}
+
+/** 写真は長辺1600pxに縮めてから送る（通信量とドライブの容量を抑えるため） */
+function 写真を縮める(file){
+  return new Promise(function(ok){
+    var img = new Image();
+    var url = URL.createObjectURL(file);
+    img.onload = function(){
+      var 長辺 = Math.max(img.width, img.height);
+      var 倍 = 長辺 > 1600 ? 1600/長辺 : 1;
+      var c = document.createElement('canvas');
+      c.width = Math.round(img.width*倍); c.height = Math.round(img.height*倍);
+      c.getContext('2d').drawImage(img, 0, 0, c.width, c.height);
+      c.toBlob(function(b){
+        URL.revokeObjectURL(url);
+        ok({ 中身: b || file, 見本: 見本を作る(c) });
+      }, 'image/jpeg', 0.85);
+    };
+    img.onerror = function(){ URL.revokeObjectURL(url); ok({ 中身: file, 見本: '' }); };
+    img.src = url;
+  });
+}
+
+/** 動画は1コマ目を見本にする（実物は縮めない） */
+function 動画の見本(file){
+  return new Promise(function(ok){
+    var v = document.createElement('video');
+    var url = URL.createObjectURL(file);
+    var 終わった = false;
+    var 片づけ = function(見本){ if(終わった) return; 終わった = true; URL.revokeObjectURL(url); ok({ 中身: file, 見本: 見本 }); };
+    v.preload = 'metadata'; v.muted = true; v.playsInline = true;
+    v.onloadeddata = function(){
+      try {
+        var c = document.createElement('canvas');
+        var 倍 = Math.min(1, 320/Math.max(v.videoWidth||320, 1));
+        c.width = Math.round((v.videoWidth||320)*倍); c.height = Math.round((v.videoHeight||240)*倍);
+        c.getContext('2d').drawImage(v, 0, 0, c.width, c.height);
+        片づけ(見本を作る(c));
+      } catch(e){ 片づけ(''); }
+    };
+    v.onerror = function(){ 片づけ(''); };
+    setTimeout(function(){ 片づけ(''); }, 8000);
+    v.src = url;
+  });
+}
+
+function 見本を作る(canvas){
+  try {
+    var c = document.createElement('canvas');
+    var 倍 = Math.min(1, 320/Math.max(canvas.width, 1));
+    c.width = Math.round(canvas.width*倍); c.height = Math.round(canvas.height*倍);
+    c.getContext('2d').drawImage(canvas, 0, 0, c.width, c.height);
+    return c.toDataURL('image/jpeg', 0.7);
+  } catch(e){ return ''; }
+}
+
+function かけらを読む(blob){
+  return new Promise(function(ok, ng){
+    var r = new FileReader();
+    r.onload = function(){ ok(String(r.result).split(',')[1] || ''); };
+    r.onerror = function(){ ng(new Error('ファイルを読めませんでした')); };
+    r.readAsDataURL(blob);
+  });
+}
+
+/**
+ * 1つ送る。
+ * まず「受け取り札」を使ってGoogleへ直接送る（速い）。
+ * それができない環境なら、いままでどおりサーバー経由に切り替える（遅いが確実）。
+ */
+function 添付を1つ送る(申し送りID, file, 進捗){
+  var 写真か = /^image\//.test(file.type);
+  var 下ごしらえ = 写真か ? 写真を縮める(file) : 動画の見本(file);
+  var 本体, 見本, 受付, ドライブID = '', 送れた量 = 0;
+
+  function 直接送る(){
+    if(!受付.口) return Promise.reject(new Error('受け取り札がありません'));
+    var 位置 = 0;
+    function 次(){
+      if(位置 >= 本体.size) return Promise.resolve();
+      var 端 = Math.min(位置 + 受付.かけら, 本体.size);
+      return fetch(受付.口, {
+        method: 'PUT',
+        headers: { 'Content-Range': 'bytes ' + 位置 + '-' + (端-1) + '/' + 本体.size },
+        body: 本体.slice(位置, 端)
+      }).then(function(r){
+        if(r.status === 308){
+          位置 = 端; 送れた量 = 位置;
+          進捗(Math.round(位置*100/本体.size));
+          return 次();
+        }
+        if(r.status === 200 || r.status === 201){
+          return r.json().then(function(j){
+            ドライブID = j.id; 送れた量 = 本体.size; 進捗(100);
+          });
+        }
+        throw new Error('直接送れませんでした（' + r.status + '）');
+      });
+    }
+    return 次();
+  }
+
+  function サーバー経由で送る(){
+    var 位置 = 0;
+    function 次(){
+      if(位置 >= 本体.size) return Promise.resolve();
+      var 端 = Math.min(位置 + 受付.かけら, 本体.size);
+      return かけらを読む(本体.slice(位置, 端)).then(function(b64){
+        return call('添付_かけら', ST.token, 受付.受付ID, 位置, b64);
+      }).then(function(r){
+        位置 = r.完了 ? 本体.size : r.受け取った;
+        進捗(Math.round(位置*100/本体.size));
+        return 次();
+      });
+    }
+    return 次();
+  }
+
+  return 下ごしらえ.then(function(r){
+    本体 = r.中身; 見本 = r.見本;
+    // location.origin ＝ この画面がどこに置かれているか。
+    // これを伝えておかないと、Googleが直接の受け取りを断る
+    return call('添付_開始', ST.token, 申し送りID, 写真か?'写真':'動画',
+                file.name, 本体.size, 本体.type || file.type, location.origin);
+  }).then(function(r){
+    受付 = r;
+    return 直接送る().catch(function(e){
+      // 1バイトも送れていないときだけ、安全に切り替えられる
+      if(送れた量 > 0) throw e;
+      return サーバー経由で送る();
+    });
+  }).then(function(){
+    return call('添付_登録', ST.token, 受付.受付ID, 見本, ドライブID);
+  });
+}
+
+/** 選んだものを順に送る */
+function 添付をまとめて送る(申し送りID){
+  if(!選んだファイル.length) return Promise.resolve();
+  var 全 = 選んだファイル.length;
+  var 表示 = document.getElementById('postProgress');
+  var p = Promise.resolve();
+  選んだファイル.forEach(function(f, i){
+    p = p.then(function(){
+      return 添付を1つ送る(申し送りID, f, function(割合){
+        表示.textContent = '写真・動画を送っています（' + (i+1) + '／' + 全 + '）　' + 割合 + '%';
+      });
+    });
+  });
+  return p.then(function(){
+    表示.textContent = '';
+    選んだファイル = [];
+    var 入 = document.getElementById('postFiles'); if(入) 入.value = '';
+    document.getElementById('postFileList').textContent = '';
+  }).catch(function(e){
+    表示.textContent = '';
+    throw new Error('本文は保存できましたが、写真・動画を送れませんでした（' + ((e && e.message)||'') + '）。詳細画面からもう一度お試しください。');
+  });
+}
+
+/** 詳細画面に添付を描く */
+function 添付を描く(申し送りID){
+  var 箱 = document.getElementById('添付欄');
+  if(!箱) return;
+  call('添付一覧', ST.token, 申し送りID).then(function(rows){
+    if(!rows.length){ 箱.innerHTML = ''; return; }
+    箱.innerHTML = '<label>写真・動画（' + rows.length + '件）</label><div id="添付並び"></div>';
+    var 並び = document.getElementById('添付並び');
+    並び.innerHTML = rows.map(function(a){
+      var i = esc(a.id);
+      return '<div class="list-item" id="添付_'+i+'">'
+        + '<div style="color:var(--sub); font-size:12px;">'+esc(a.種類)+'　'+esc(a.ファイル名)
+        + '　'+ (a.大きさ>=1048576 ? (a.大きさ/1048576).toFixed(1)+'MB' : Math.round(a.大きさ/1024)+'KB') +'</div>'
+        + '<div id="見本_'+i+'" style="margin:6px 0;"></div>'
+        + (a.いま見られる
+            ? '<button class="btn gray" style="margin:0; padding:8px; font-size:13px;" onclick="添付を開く(\''+i+'\',\''+esc(a.種類)+'\')">'
+              + (a.種類==='写真'?'大きく見る':'再生する') + '</button>'
+            : '<div style="color:var(--sub); font-size:12px;">'+esc(a.状態)+'</div>'
+              + (ST.me && ST.me.権限==='管理者'
+                 ? '<div class="sp"></div><button class="btn gray" style="margin:0; padding:8px; font-size:13px;" onclick="添付を取り出す(\''+i+'\')">事務所のPCから取り出す</button>'
+                 : '<div class="note">見たいときは管理者に取り出しを依頼してください。</div>'))
+        + '<div id="実物_'+i+'" style="margin-top:8px;"></div>'
+        + '</div>';
+    }).join('');
+    rows.forEach(function(a){
+      if(!a.見本あり) return;
+      call('添付_見本', ST.token, a.id).then(function(d){
+        if(d) document.getElementById('見本_'+a.id).innerHTML =
+          '<img src="'+d+'" style="max-width:160px; border-radius:8px;">';
+      }).catch(function(){});
+    });
+  }).catch(function(e){ if(!切れた(e)) 箱.innerHTML = '<div class="note">'+esc((e&&e.message)||'')+'</div>'; });
+}
+
+function 添付を開く(id, 種類){
+  var 枠 = document.getElementById('実物_'+id);
+  枠.textContent = '読み込み中…';
+  if(種類 === '写真'){
+    call('添付_写真', ST.token, id).then(function(d){
+      枠.innerHTML = '<img src="'+d+'" style="max-width:100%; border-radius:8px;">';
+    }).catch(function(e){ if(!切れた(e)) 枠.textContent = (e && e.message); });
+  } else {
+    call('添付_動画', ST.token, id).then(function(u){
+      枠.innerHTML = '<iframe src="'+esc(u)+'" style="width:100%; height:240px; border:0; border-radius:8px;" allow="autoplay"></iframe>';
+    }).catch(function(e){ if(!切れた(e)) 枠.textContent = (e && e.message); });
+  }
+}
+
+function 添付を取り出す(id){
+  if(!confirm('事務所のPCから取り出します。\n数分で見られるようになります。よろしいですか？')) return;
+  call('管理_添付取り出し', ST.token, id).then(function(r){
+    var 枠 = document.getElementById('実物_'+id);
+    枠.textContent = r.依頼した ? '取り出しています。数分後にもう一度開いてください。'
+                  : (r.待ち ? 'すでに取り出し中です。もう少しお待ちください。' : 'もう見られます。開き直してください。');
+  }).catch(function(e){ if(!切れた(e)) alert((e && e.message)); });
+}
+
+function admQrPdf(全員){
+  var ids = [];
+  if(!全員){
+    Array.prototype.forEach.call(document.querySelectorAll('#admBody input.qrpick:checked'), function(c){ ids.push(c.value); });
+    if(!ids.length){ show('admMsg','カードを作るかたを選んでください'); return; }
+  }
+  show('admMsg','');
+  document.getElementById('qrOut').textContent = 'PDFを作っています…（人数が多いと少し時間がかかります）';
+  call('管理_QRカードPDF', ST.token, ids).then(function(r){
+    document.getElementById('qrOut').innerHTML =
+      esc(r.件数) + '名ぶんのカードを作りました。<br><a href="'+esc(r.url)+'" target="_blank" rel="noopener">GoogleドライブでPDFを開く</a>'
+      + '<div class="note">A4に1人1枚で並んでいます。印刷して切り取り線で切り分け、ご本人にお渡しください。'
+      + (r.共有先 && r.共有先.length ? '<br>次のアドレスにも閲覧権限を付けました：' + esc(r.共有先.join('、')) : '') + '</div>';
+  }).catch(function(e){ if(!切れた(e)) document.getElementById('qrOut').textContent = (e && e.message); });
+}
+function admQrReset(id){
+  if(!confirm('このかたのQRを作り直します。\n今までお渡ししたカードは、その場で使えなくなります。よろしいですか？')) return;
+  call('管理_QR作り直す', ST.token, id)
+    .then(function(){ setAdm('staff'); show('admMsg','QRを作り直しました。「QRカード」タブから新しいカードを出してお渡しください','ok'); })
+    .catch(function(e){ if(!切れた(e)) show('admMsg', (e && e.message)); });
+}
+function admCsv(){
+  document.getElementById('csvOut').textContent = '作成中…';
+  call('管理_CSV出力', ST.token, document.getElementById('cFrom').value, document.getElementById('cTo').value)
+    .then(function(r){
+      document.getElementById('csvOut').innerHTML =
+        esc(r.件数) + '件を出力しました。<br><a href="'+esc(r.url)+'" target="_blank" rel="noopener">Googleドライブで開く</a>'
+        + '<div class="note">'+esc(r.注意)+'</div>';
+    }).catch(function(e){ if(!切れた(e)) document.getElementById('csvOut').textContent = (e && e.message); });
+}
+</script>
+</body>
+</html>
