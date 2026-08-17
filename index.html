@@ -817,8 +817,11 @@ function setAdm(t){
             + '<input type="checkbox" class="qrpick" value="'+esc(s.id)+'"> '
             + '<b>'+esc(s.氏名)+'</b>（'+esc(s.権限)+'）</label>';
         }).join('')
-      + '<button class="btn" onclick="admQrPdf(false)">選んだ人のカードをPDFで作る</button>'
-      + '<button class="btn gray" onclick="admQrPdf(true)">在職者ぜんぶのカードをPDFで作る</button>'
+      + '<button class="btn" onclick="admQrPrint(false)">選んだ人のカードを印刷する</button>'
+      + '<button class="btn" onclick="admQrPrint(true)">在職者ぜんぶのカードを印刷する</button>'
+      + '<div class="note">印刷画面で「送信先」を「PDFに保存」にすると、PDFとしても保存できます。</div>'
+      + '<button class="btn gray" onclick="admQrPdf(false)">選んだ人のカードをドライブにPDFで残す</button>'
+      + '<button class="btn gray" onclick="admQrPdf(true)">在職者ぜんぶをドライブにPDFで残す</button>'
       + '<div id="qrOut" style="margin-top:12px;"></div>';
   }).catch(失敗);
 
@@ -869,6 +872,38 @@ function admRestore(id){
     .then(function(){ setAdm('hidden'); show('admMsg','復元しました','ok'); })
     .catch(function(e){ if(!切れた(e)) show('admMsg', (e && e.message)); });
 }
+/** チェックの付いた職員を集める（空なら全員あつかい） */
+function 選んだ職員_(全員){
+  if(全員) return [];
+  var ids = [];
+  Array.prototype.forEach.call(document.querySelectorAll('#admBody input.qrpick:checked'), function(c){ ids.push(c.value); });
+  return ids;
+}
+
+/**
+ * この端末で直接印刷する。Googleドライブを開かずに済み、
+ * 印刷画面から「PDFに保存」も選べる。
+ */
+function admQrPrint(全員){
+  var ids = 選んだ職員_(全員);
+  if(!全員 && !ids.length){ show('admMsg','カードを作るかたを選んでください'); return; }
+  show('admMsg','');
+  document.getElementById('qrOut').textContent = 'カードを組み立てています…';
+  call('管理_QRカード印刷用', ST.token, ids).then(function(r){
+    var w = window.open('', '_blank');
+    if(!w){
+      document.getElementById('qrOut').textContent =
+        '新しい窓を開けませんでした。ブラウザの「ポップアップを許可」をご確認いただくか、下の「ドライブにPDFで残す」をお使いください。';
+      return;
+    }
+    w.document.open(); w.document.write(r.html); w.document.close();
+    document.getElementById('qrOut').innerHTML =
+      esc(r.件数) + '名ぶんのカードを新しい窓に出しました。'
+      + '<div class="note">印刷画面が出ない場合は、その窓で「Ctrlキーを押しながら P」を押してください。</div>';
+    setTimeout(function(){ try { w.focus(); w.print(); } catch(e){} }, 800);
+  }).catch(function(e){ if(!切れた(e)) document.getElementById('qrOut').textContent = (e && e.message); });
+}
+
 
 // ===== 写真・動画 =====
 var 選んだファイル = [];
