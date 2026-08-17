@@ -311,7 +311,7 @@ function 切れた(e){
   return false;
 }
 
-var ST = { token:null, me:null, conf:null, users:[], staff:[], tab:'all', cursor:null, busy:false, detailId:null };
+var ST = { token:null, me:null, conf:null, users:[], staff:[], tab:'all', cursor:null, busy:false, detailId:null, 一覧:[] };
 
 window.addEventListener('load', function(){
   // 画面はもう出ている。ここから1往復だけして中身を入れる
@@ -319,9 +319,26 @@ window.addEventListener('load', function(){
   if(埋込QRキー || 覚えているtoken){
     show('loginMsg', '読み込んでいます…', 'ok');
   }
+  // 前に開いたときの内容が端末に残っていれば、待たずにそのまま出す（すぐ差し替わる）
+  var 前回 = null;
+  try { 前回 = JSON.parse(記憶.get('ms_maegai') || 'null'); } catch(e){ 前回 = null; }
+  if(覚えているtoken && 前回 && 前回.ログイン && 前回.先読み){
+    ST.token = 覚えているtoken;
+    前回.ログイン.token = 覚えているtoken;
+    afterLogin(前回.ログイン, 前回.先読み);
+    show('listMsg', '最新を確認しています…', 'ok');
+  }
   call('初期表示', 埋込QRキー, 覚えているtoken).then(function(d){
     埋込データ = d || null;
     show('loginMsg','');
+    // 次に開いたときのために控えておく（合言葉やPINは入っていない）
+    try {
+      if(d && d.ログイン && d.先読み){
+        記憶.set('ms_maegai', JSON.stringify({ ログイン: { 職員: d.ログイン.職員, 設定: d.ログイン.設定 }, 先読み: d.先読み }));
+      }
+    } catch(e){}
+    ST.cursor = null;
+    document.getElementById('list').innerHTML = '';
     始める();
   }).catch(function(e){
     show('loginMsg', '読み込めませんでした：' + ((e && e.message) || '') + '　もう一度開き直してください');
@@ -463,6 +480,8 @@ function 一覧を描く(r){
   } else {
     box.insertAdjacentHTML('beforeend', r.items.map(cardHtml).join(''));
   }
+  // いま画面に出ている申し送りを手元に持っておく（開くときに待たせないため）
+  ST.一覧 = ST.cursor ? (ST.一覧 || []).concat(r.items) : r.items.slice();
   ST.cursor = r.next;
   document.getElementById('moreBtn').classList.toggle('hide', !r.next);
 }
@@ -547,6 +566,14 @@ function doPost(){
 }
 
 // ===== 詳細 =====
+/** 一覧に届いている情報だけで、先に詳細を組み立てる（サーバーを待たない） */
+function 手元の詳細_(id){
+  var d = (ST.一覧 || []).filter(function(x){ return String(x.id) === String(id); })[0];
+  if(!d) return null;
+  return { 本体: d, 子: [], 既読者: [], 自分既読: !!d.自分既読,
+           自己修正可: false, 修正回数: 0, 管理者: !!(ST.me && ST.me.権限==='管理者'), 途中: true };
+}
+
 function openDetail(id){
   id = safeId(id);
   if(!id) return;
@@ -554,9 +581,12 @@ function openDetail(id){
   document.getElementById('detailBody').innerHTML = '<div class="loading">読み込み中…</div>';
   show('detailMsg','');
   document.getElementById('detailPage').classList.remove('hide');
+  var 手元 = 手元の詳細_(id);
+  if(手元){ renderDetail(手元); show('detailMsg','最新を確認しています…','ok'); }
   call('詳細取得', ST.token, id).then(function(r){
     ST.detailId = r.本体.id;
     renderDetail(r);
+    show('detailMsg','');
     if(!r.自分既読) call('既読にする', ST.token, r.本体.id).catch(function(){});
   }).catch(function(e){
     if(切れた(e)) return;
@@ -564,7 +594,31 @@ function openDetail(id){
     show('detailMsg', (e && e.message) || '読み込みに失敗しました');
   });
 }
-function closeDetail(){ closePage('detailPage'); reload(); }
+/**
+ * 一覧に戻る。待たせないよう、いま出ている一覧をそのまま見せて、裏で静かに更新する。
+ */
+function closeDetail(){
+  closePage('detailPage');
+  裏で更新();
+}
+
+/** 画面はそのままに、新しい申し送りだけを取りに行く */
+function 裏で更新(){
+  if(ST.busy) return;
+  ST.busy = true;
+  show('listMsg','更新しています…','ok');
+  call('一覧取得', ST.token, { tab: ST.tab }).then(function(r){
+    ST.busy = false;
+    ST.cursor = null;
+    document.getElementById('list').innerHTML = '';
+    一覧を描く(r);
+    show('listMsg','');
+  }).catch(function(e){
+    ST.busy = false;
+    if(切れた(e)) return;
+    show('listMsg','最新の取得に失敗しました（表示は前回のままです）');
+  });
+}
 function renderDetail(r){
   var d = r.本体;
   var h = '<div class="card"><div class="blk"><h4>【元の記載】'+esc(d.投稿日時full)+'　'+esc(d.記載者名)+'（'+esc(d.勤務帯)+'）</h4>'
