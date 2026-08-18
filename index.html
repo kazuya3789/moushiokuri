@@ -1314,6 +1314,30 @@ function admQrReset(id){
     .then(function(){ setAdm('staff'); show('admMsg','QRを作り直しました。「QRカード」タブから新しいカードを出してお渡しください','ok'); })
     .catch(function(e){ if(!切れた(e)) show('admMsg', (e && e.message)); });
 }
+/** 作ったCSVを覚えておく（保存ボタンを押したときに使う） */
+var 作ったCSV = null;
+
+/**
+ * CSVをこの端末に保存する（Googleアカウントは要らない）。
+ * ★先頭に \ufeff（見えない印）を付ける。付けないとExcelが日本語を文字化けさせる。
+ */
+function CSVを保存する(){
+  if(!作ったCSV || !作ったCSV.本文){ show('admMsg','保存できる中身がありません'); return; }
+  try {
+    var b = new Blob(['\ufeff' + 作ったCSV.本文], { type: 'text/csv;charset=utf-8;' });
+    var u = URL.createObjectURL(b);
+    var a = document.createElement('a');
+    a.href = u;
+    a.download = 作ったCSV.名前 || '申し送り.csv';
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    setTimeout(function(){ try { URL.revokeObjectURL(u); } catch(e){} }, 3000);
+    show('admMsg','保存しました（端末のダウンロード先をご確認ください）','ok');
+  } catch(e){
+    show('admMsg','この端末では直接保存できませんでした。下の「Googleドライブで開く」をお使いください');
+  }
+}
 /** 選ぶ形の入れ物を作る。いまの値が候補に無ければ、その値も先頭に足しておく（勝手に変えないため） */
 function 設定の選び方_(項目, 候補, いま){
   var ある = false;
@@ -1355,11 +1379,20 @@ function admSaveSettings(){
 }
 function admCsv(){
   document.getElementById('csvOut').textContent = '作成中…';
+  作ったCSV = null;
   call('管理_CSV出力', ST.token, document.getElementById('cFrom').value, document.getElementById('cTo').value)
     .then(function(r){
-      document.getElementById('csvOut').innerHTML =
-        esc(r.件数) + '件を出力しました。<br><a href="'+esc(r.url)+'" target="_blank" rel="noopener">Googleドライブで開く</a>'
-        + '<div class="note">'+esc(r.注意)+'</div>';
+      作ったCSV = r;
+      var h = esc(r.件数) + '件を出力しました。';
+      if(r.本文){
+        h += '<div class="sp"></div>'
+           + '<button class="btn" onclick="CSVを保存する()">この端末に保存する</button>'
+           + '<div class="note">Googleアカウントは要りません。Excelでそのまま開けます。</div>';
+      }
+      h += '<div class="note" style="margin-top:10px;">'
+         + '<a href="'+esc(r.url)+'" target="_blank" rel="noopener">Googleドライブの控えを開く</a>（アカウントが要ります）</div>'
+         + '<div class="note">'+esc(r.注意)+'</div>';
+      document.getElementById('csvOut').innerHTML = h;
     }).catch(function(e){ if(!切れた(e)) document.getElementById('csvOut').textContent = (e && e.message); });
 }
 </script>
