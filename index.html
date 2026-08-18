@@ -241,6 +241,7 @@
       <button data-adm="log" onclick="setAdm('log')">監査ログ</button>
       <button data-adm="err" onclick="setAdm('err')">エラー</button>
       <button data-adm="csv" onclick="setAdm('csv')">CSV出力</button>
+      <button data-adm="setting" onclick="setAdm('setting')">設定</button>
     </div>
     <div id="admMsg" class="msg"></div>
     <div id="admBody"></div>
@@ -825,6 +826,48 @@ function setAdm(t){
       + '<div id="qrOut" style="margin-top:12px;"></div>';
   }).catch(失敗);
 
+  if(t==='setting') call('管理_設定一覧', ST.token).then(function(r){
+    ST.設定元 = {};
+    var s = r.吸い出し || {};
+    var 件 = s.件数 || {};
+    var h = '<div class="note"><b>事務所PCへの吸い出し</b><br>'
+      + '最後に動いた：' + esc(s.最後に動いた || '（分かりません）') + '<br>'
+      + 'ドライブにある：' + esc(件.ドライブ==null?'—':件.ドライブ) + '件'
+      + '（' + esc(s.ドライブにある容量MB==null?'—':s.ドライブにある容量MB) + 'MB）'
+      + '　事務所PCに保管：' + esc(件.PC==null?'—':件.PC) + '件'
+      + '　取り出し中：' + esc(件.取り出し中==null?'—':件.取り出し中) + '件</div>';
+    var 組 = '';
+    r.設定.forEach(function(d){
+      ST.設定元[d.項目] = String(d.値);
+      if(d.組 !== 組){ 組 = d.組; h += '<div style="margin:18px 0 6px; font-weight:700;">' + esc(組) + '</div>'; }
+      h += '<div class="list-item"><b>' + esc(d.項目) + '</b>';
+      if(d.説明) h += '<div class="note" style="margin:4px 0;">' + esc(d.説明) + '</div>';
+      if(d.見るだけ){
+        h += '<div style="word-break:break-all;">' + esc(d.値 || '（空）') + '</div>'
+           + '<div class="note" style="margin-top:4px;">この項目は画面からは変えられません。' + esc(d.見るだけ) + '</div>';
+      } else if(d.型==='切替'){
+        h += 設定の選び方_(d.項目, [{名:'ON', 値:'ON'}, {名:'OFF', 値:'OFF'}], d.値);
+      } else if(d.型==='選択'){
+        h += 設定の選び方_(d.項目, d.候補.map(function(c){ return {名:c, 値:c}; }), d.値);
+      } else if(d.型==='選ぶ数'){
+        h += 設定の選び方_(d.項目, d.候補.map(function(c){ return {名:c.名, 値:String(c.値)}; }), d.値);
+      } else if(d.型==='数'){
+        h += '<input data-set="' + esc(d.項目) + '" type="number" value="' + esc(d.値) + '"'
+           + (d.下==null?'':' min="'+esc(d.下)+'"') + (d.上==null?'':' max="'+esc(d.上)+'"') + '>';
+      } else if(d.型==='時刻'){
+        h += '<input data-set="' + esc(d.項目) + '" type="text" value="' + esc(d.値) + '" placeholder="9:00">';
+      } else {
+        h += '<input data-set="' + esc(d.項目) + '" type="text" value="' + esc(d.値) + '">';
+      }
+      if(d.行がない) h += '<div class="note" style="margin-top:4px;">★設定シートにこの行がありません。'
+        + 'いまは決められた値で動いています。スクリプトエディタで「初期設定」を実行すると行ができます。</div>';
+      h += '</div>';
+    });
+    h += '<button class="btn" onclick="admSaveSettings()">変えたところを保存する</button>'
+       + '<div class="note">保存すると、すぐに全員へ効きます。</div>';
+    box.innerHTML = h;
+  }).catch(失敗);
+
   if(t==='csv') box.innerHTML =
       '<label>期間（空欄なら全期間）</label><div class="row"><input id="cFrom" type="date"><input id="cTo" type="date"></div>'
     + '<button class="btn" onclick="admCsv()">CSVを作成する</button>'
@@ -1158,6 +1201,45 @@ function admQrReset(id){
   call('管理_QR作り直す', ST.token, id)
     .then(function(){ setAdm('staff'); show('admMsg','QRを作り直しました。「QRカード」タブから新しいカードを出してお渡しください','ok'); })
     .catch(function(e){ if(!切れた(e)) show('admMsg', (e && e.message)); });
+}
+/** 選ぶ形の入れ物を作る。いまの値が候補に無ければ、その値も先頭に足しておく（勝手に変えないため） */
+function 設定の選び方_(項目, 候補, いま){
+  var ある = false;
+  候補.forEach(function(c){ if(String(c.値).toUpperCase() === String(いま).toUpperCase()) ある = true; });
+  var 全部 = ある ? 候補 : [{名:'いまの値（' + いま + '）', 値:String(いま)}].concat(候補);
+  return '<select data-set="' + esc(項目) + '">'
+    + 全部.map(function(c){
+        var 選 = (String(c.値).toUpperCase() === String(いま).toUpperCase()) ? ' selected' : '';
+        return '<option value="' + esc(c.値) + '"' + 選 + '>' + esc(c.名) + '</option>';
+      }).join('') + '</select>';
+}
+/** 変えたところだけを、1つずつ順に保存する */
+function admSaveSettings(){
+  var 変更 = [];
+  Array.prototype.forEach.call(document.querySelectorAll('#admBody [data-set]'), function(el){
+    var 項目 = el.getAttribute('data-set');
+    if(String(el.value) !== String(ST.設定元[項目])) 変更.push({ 項目: 項目, 値: String(el.value) });
+  });
+  if(!変更.length){ show('admMsg','変えたところがありません'); return; }
+  show('admMsg', '保存しています…（' + 変更.length + '件）');
+  var 済 = [], だめ = [];
+  var p = Promise.resolve();
+  変更.forEach(function(c){
+    p = p.then(function(){
+      return call('管理_設定更新', ST.token, c.項目, c.値).then(function(r){
+        済.push(c.項目 + '：' + (r.前 === '' ? '（空）' : r.前) + ' → ' + r.値);
+      }).catch(function(e){
+        if(切れた(e)) throw e;
+        だめ.push(c.項目 + '：' + (e && e.message));
+      });
+    });
+  });
+  p.then(function(){
+    setAdm('setting');
+    var 文 = (済.length ? '変えました　' + 済.join('／') : '');
+    if(だめ.length) 文 += (文 ? '　' : '') + '変えられなかったもの　' + だめ.join('／');
+    show('admMsg', 文, だめ.length ? 'err' : 'ok');
+  }).catch(function(e){ if(!切れた(e)) show('admMsg', (e && e.message)); });
 }
 function admCsv(){
   document.getElementById('csvOut').textContent = '作成中…';
