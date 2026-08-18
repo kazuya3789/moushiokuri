@@ -603,7 +603,7 @@ function 手元の詳細_(id){
            自己修正可: false, 修正回数: 0, 管理者: !!(ST.me && ST.me.権限==='管理者'), 途中: true };
 }
 
-function openDetail(id){
+function openDetail(id, 済ませた文){
   id = safeId(id);
   if(!id) return;
   ST.detailId = id;
@@ -615,7 +615,7 @@ function openDetail(id){
   call('詳細取得', ST.token, id).then(function(r){
     ST.detailId = r.本体.id;
     renderDetail(r);
-    show('detailMsg','');
+    show('detailMsg', 済ませた文 || '', 'ok');
     if(!r.自分既読) call('既読にする', ST.token, r.本体.id).catch(function(){});
   }).catch(function(e){
     if(切れた(e)) return;
@@ -674,6 +674,15 @@ function renderDetail(r){
     h += '<button class="btn" id="doneBtn" onclick="doDone()">対応済みにする</button>';
   if(r.自己修正可)
     h += '<button class="btn gray" onclick="openSelfEdit()">自分の記載を修正する（投稿直後のみ）</button>';
+  if(r.管理者 || (ST.me && String(d.記載者ID) === String(ST.me.id))){
+    h += '<div class="list-item" style="margin-top:10px;"><b>勤務帯</b>'
+       + '<div class="note" style="margin:4px 0;">いまは「' + esc(d.勤務帯) + '」で記録されています。'
+       + '違っていれば直せます（直したことは記録に残ります）。</div>'
+       + '<select id="shiftFix">'
+       + '<option' + (d.勤務帯==='日勤'?' selected':'') + '>日勤</option>'
+       + '<option' + (d.勤務帯==='夜勤'?' selected':'') + '>夜勤</option></select>'
+       + '<button class="btn gray" style="margin-top:8px;" onclick="doShiftFix()">この勤務帯に直す</button></div>';
+  }
   if(r.管理者)
     h += '<button class="btn danger" onclick="doHide()">非表示にする（管理者）</button>';
   h += '<div id="添付欄" style="margin-top:14px;"></div>';
@@ -682,6 +691,14 @@ function renderDetail(r){
      + '<button class="btn" id="addBtn" onclick="doAdd()">保存する</button></div>';
   document.getElementById('detailBody').innerHTML = h;
   if(ST.detailId) 添付を描く(ST.detailId);
+}
+/** 送ったあとに勤務帯だけを直す（本文は触らない） */
+function doShiftFix(){
+  var v = document.getElementById('shiftFix').value;
+  call('勤務帯を直す', ST.token, ST.detailId, v).then(function(r){
+    openDetail(ST.detailId, (r && r.変えなかった) ? 'もともと「'+v+'」でした'
+                                                : '勤務帯を「'+v+'」に直しました');
+  }).catch(function(e){ if(!切れた(e)) show('detailMsg', (e && e.message)); });
 }
 var addMode = '追記', 追記受付ID = null;
 function openAddBox(mode){
