@@ -850,8 +850,20 @@ function setAdm(t){
   }).catch(失敗);
 
   if(t==='user') call('利用者一覧', ST.token).then(function(rows){
-    box.innerHTML = rows.map(function(u){
-      return '<div class="list-item"><b>'+esc(u.氏名)+'</b>　'+esc(u.よみ||'')+'　'+esc(u.部屋||'')+'　'+esc(u.在籍)+'</div>';
+    // 在籍の人を先に、退去した人はうすく後ろへ
+    var 並び = rows.slice().sort(function(a,b){
+      if((a.在籍==='在籍') !== (b.在籍==='在籍')) return (a.在籍==='在籍') ? -1 : 1;
+      return String(a.部屋||'').localeCompare(String(b.部屋||''));
+    });
+    ST.利用者元 = {};
+    box.innerHTML = 並び.map(function(u){
+      ST.利用者元[u.id] = u;
+      var 退去 = (u.在籍 !== '在籍');
+      return '<div class="list-item"' + (退去 ? ' style="opacity:.55;"' : '') + '>'
+        + '<b>'+esc(u.氏名)+'</b>　'+esc(u.よみ||'')+'　'+esc(u.部屋||'')+'　'+esc(u.在籍)
+        + '<div class="sp"></div>'
+        + '<button class="btn gray" style="margin:0; padding:8px; font-size:13px;" onclick="admEditUser(\''+esc(safeId(u.id))+'\')">直す</button>'
+        + '</div>';
     }).join('') + '<button class="btn" onclick="admAddUser()">利用者を追加する</button>';
   }).catch(失敗);
 
@@ -970,6 +982,26 @@ function admAddUser(){
   var r = prompt('部屋番号','') || '';
   call('管理_利用者追加', ST.token, n, y, r)
     .then(function(){ setAdm('user'); show('admMsg','追加しました','ok'); })
+    .catch(function(e){ if(!切れた(e)) show('admMsg', (e && e.message)); });
+}
+/**
+ * 利用者を直す（氏名・よみ・部屋・在籍）。
+ * ★退去にしても記録は消えない。投稿画面の一覧に出なくなるだけ。
+ *   過去の申し送りに残っている氏名も、書かれた当時のまま変えない。
+ */
+function admEditUser(id){
+  var u = (ST.利用者元 || {})[id];
+  if(!u){ show('admMsg','その利用者が見つかりません'); return; }
+  var n = prompt('氏名', u.氏名 || ''); if(n === null) return;
+  var y = prompt('よみがな（ひらがな）', u.よみ || ''); if(y === null) return;
+  var r = prompt('部屋番号', u.部屋 || ''); if(r === null) return;
+  var z = prompt('在籍状況（在籍／退去）\n※退去にすると、投稿画面の利用者一覧から消えます。\n　これまでの記録は消えません。', u.在籍 || '在籍');
+  if(z === null) return;
+  call('管理_利用者更新', ST.token, id, n, y, r, String(z).trim())
+    .then(function(res){
+      setAdm('user');
+      show('admMsg', res && res.変えなかった ? '変わっていません' : '直しました', 'ok');
+    })
     .catch(function(e){ if(!切れた(e)) show('admMsg', (e && e.message)); });
 }
 function admPin(id){
