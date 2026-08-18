@@ -881,6 +881,16 @@ function setAdm(t){
       + '（' + esc(s.ドライブにある容量MB==null?'—':s.ドライブにある容量MB) + 'MB）'
       + '　事務所PCに保管：' + esc(件.PC==null?'—':件.PC) + '件'
       + '　取り出し中：' + esc(件.取り出し中==null?'—':件.取り出し中) + '件</div>';
+    // ★控え（バックアップ）の様子。失敗や「動いていない」を必ず目に見える形で出す（A6）
+    var b = r.控え || {};
+    var 心配 = b.心配 || [];
+    h += '<div class="note" style="' + (心配.length ? 'border-left:4px solid #c00; padding-left:8px;' : '') + '">'
+      + '<b>記録の控え（バックアップ）</b>'
+      + (心配.length ? ' <span style="color:#c00;">★確かめてください</span>' : ' 順調です')
+      + '<br>ドライブの控え：' + esc(b.ドライブ || '（分かりません）')
+      + '<br>事務所PCの控え：' + esc(b.事務所PC || '（分かりません）');
+    心配.forEach(function(x){ h += '<div style="color:#c00; margin-top:4px;">★' + esc(x) + '</div>'; });
+    h += '</div>';
     var 組 = '';
     r.設定.forEach(function(d){
       ST.設定元[d.項目] = String(d.値);
