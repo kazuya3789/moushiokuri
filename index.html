@@ -524,11 +524,12 @@ window.addEventListener('scroll', function(){
 });
 
 // ===== 投稿 =====
-var 受付ID = null;
+var 受付ID = null, 送信回数 = 0;
 function openPost(){
   // 前に書いた人の選択が残ったままにならないよう、毎回「自動」に戻す
   document.getElementById('postShift').value = '';
   勤務帯の案内();
+  送信回数 = 0;   // 送り直しかどうかを数える（C4）
   document.getElementById('postBody').value='';
   document.getElementById('postCount').textContent='';
   show('postMsg','');
@@ -585,12 +586,14 @@ function doPost(){
   if(body.length > 上限){ show('postMsg','本文が長すぎます（'+body.length+'文字／上限'+上限+'文字）'); return; }
   var btn = document.getElementById('postBtn');
   btn.disabled = true; btn.textContent = '送信中…';
+  送信回数++;   // 2回目以降は「送り直し」としてサーバーに伝える（C4）
   call('投稿', ST.token, {
     本文: body,
     利用者ID: document.getElementById('postUser').value,
     分類: document.getElementById('postCat').value,
     重要度: document.getElementById('postLevel').value,
     勤務帯: document.getElementById('postShift').value,
+    送り直し: (送信回数 > 1),
     要対応: document.getElementById('postTodo').checked,
     対応期限: document.getElementById('postDue').value
   }, 受付ID).then(function(id){
@@ -720,10 +723,11 @@ function doShiftFix(){
                                                 : '勤務帯を「'+v+'」に直しました');
   }).catch(function(e){ if(!切れた(e)) show('detailMsg', (e && e.message)); });
 }
-var addMode = '追記', 追記受付ID = null;
+var addMode = '追記', 追記受付ID = null, 追記送信回数 = 0;
 function openAddBox(mode){
   addMode = mode;
   追記受付ID = uuid();
+  追記送信回数 = 0;   // 送り直しかどうかを数える（C4）
   document.getElementById('addLabel').textContent = mode==='訂正'
     ? '訂正の内容（元の記載はそのまま残ります）' : '追記の内容';
   document.getElementById('addBox').classList.remove('hide');
@@ -734,7 +738,8 @@ function doAdd(){
   if(!t.trim()){ show('detailMsg','内容を入力してください'); return; }
   var btn = document.getElementById('addBtn');
   btn.disabled = true; btn.textContent = '保存中…';
-  call('追記', ST.token, ST.detailId, addMode, t, 追記受付ID)
+  追記送信回数++;   // 2回目以降は「送り直し」としてサーバーに伝える（C4）
+  call('追記', ST.token, ST.detailId, addMode, t, 追記受付ID, (追記送信回数 > 1))
     .then(function(){ openDetail(ST.detailId); })
     .catch(function(e){
       btn.disabled = false; btn.textContent = '保存する';
