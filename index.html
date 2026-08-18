@@ -126,6 +126,10 @@
     <div id="postMsg" class="msg"></div>
     <textarea id="postBody" placeholder="ここに申し送りを入力…" oninput="countBody()"></textarea>
     <div id="postCount" class="count"></div>
+    <label>勤務帯</label>
+    <select id="postShift" onchange="勤務帯の案内()">
+      <option value="">自動</option><option>日勤</option><option>夜勤</option></select>
+    <div id="postShiftNote" class="note"></div>
     <details class="opt">
       <summary>＋ 詳しく（任意）</summary>
       <label>利用者</label>
@@ -136,10 +140,6 @@
         <div>
           <label>重要度</label>
           <select id="postLevel"><option>ふつう</option><option>高</option><option>低</option></select>
-        </div>
-        <div>
-          <label>勤務帯</label>
-          <select id="postShift"><option value="">自動</option><option>日勤</option><option>夜勤</option></select>
         </div>
       </div>
       <label class="check"><input type="checkbox" id="postTodo">対応が必要</label>
@@ -516,6 +516,9 @@ window.addEventListener('scroll', function(){
 // ===== 投稿 =====
 var 受付ID = null;
 function openPost(){
+  // 前に書いた人の選択が残ったままにならないよう、毎回「自動」に戻す
+  document.getElementById('postShift').value = '';
+  勤務帯の案内();
   document.getElementById('postBody').value='';
   document.getElementById('postCount').textContent='';
   show('postMsg','');
@@ -524,6 +527,31 @@ function openPost(){
   setTimeout(function(){ document.getElementById('postBody').focus(); }, 100);
 }
 function closePage(id){ document.getElementById(id).classList.add('hide'); }
+/** いま「自動」だとどちらで記録されるかを出す（18時ちょうどから夜勤になるため） */
+function いまの勤務帯_(){
+  var c = ST.conf || {};
+  if(c.日勤開始 == null || c.日勤終了 == null) return null;
+  var d = new Date();
+  var m = d.getHours()*60 + d.getMinutes();
+  return (m >= c.日勤開始 && m < c.日勤終了) ? '日勤' : '夜勤';
+}
+function 分を時刻_(m){
+  if(m == null) return '';
+  var h = Math.floor(m/60), f = m%60;
+  return h + ':' + (f<10?'0':'') + f;
+}
+function 勤務帯の案内(){
+  var 枠 = document.getElementById('postShiftNote');
+  if(!枠) return;
+  var 選 = document.getElementById('postShift').value;
+  if(選){ 枠.textContent = 'この申し送りは「' + 選 + '」として記録します。'; return; }
+  var いま = いまの勤務帯_();
+  var c = ST.conf || {};
+  枠.textContent = いま
+    ? '自動＝いま書くと「' + いま + '」になります（日勤は '
+      + 分を時刻_(c.日勤開始) + '〜' + 分を時刻_(c.日勤終了) + '）。違うときは選び直してください。'
+    : '自動＝書いた時刻で決まります。違うときは選び直してください。';
+}
 function countBody(){
   var 上限 = (ST.conf && ST.conf.本文上限) || 5000;
   var n = document.getElementById('postBody').value.length;
