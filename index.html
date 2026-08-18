@@ -305,13 +305,22 @@ function uuid(){
 function 切れた(e){
   var m = (e && e.message) || '';
   if(/ログインしてください|有効期限|操作がなかった|利用停止/.test(m)){
-    記憶.del('ms_token');
+    端末の控えを消す_();
     location.reload();
     return true;
   }
   return false;
 }
 
+/**
+ * 合言葉を捨てるときは、端末に残した控えもまとめて捨てる（B3・2026-08-19）
+ *   ms_token  … 合言葉
+ *   ms_maegai … 前回の一覧（**申し送りの本文が入っている**）。外に置いた画面だけが使う
+ */
+function 端末の控えを消す_(){
+  記憶.del('ms_token');
+  記憶.del('ms_maegai');
+}
 var ST = { token:null, me:null, conf:null, users:[], staff:[], tab:'all', cursor:null, busy:false, detailId:null, 一覧:[] };
 
 window.addEventListener('load', function(){
@@ -356,7 +365,7 @@ function 始める(){
   }
   // ②QRで入れなかった場合は、理由を出してふつうのログイン画面へ
   if(埋込データ && 埋込データ.入れなかった){
-    記憶.del('ms_token');
+    端末の控えを消す_();
     showLogin();
     show('loginMsg', 埋込データ.入れなかった);
     return;
@@ -365,7 +374,8 @@ function 始める(){
   // ③前に入ったことがある端末＝上の1往復でログイン済みの中身が返ってきている
   ST.token = 記憶.get('ms_token');
   if(ST.token && !(埋込データ && 埋込データ.ログイン)){
-    記憶.del('ms_token');
+    // 合言葉が通らなかった＝端末に残した前回の一覧（本文入り）もここで捨てる（B3）
+    端末の控えを消す_();
     ST.token = null;
   }
   showLogin();
@@ -447,7 +457,7 @@ function afterLogin(r, 先読み){
 
 function doLogout(){
   call('ログアウト', ST.token).catch(function(){}).then(function(){
-    記憶.del('ms_token');
+    端末の控えを消す_();
     location.reload();
   });
 }
@@ -527,13 +537,23 @@ function openPost(){
   setTimeout(function(){ document.getElementById('postBody').focus(); }, 100);
 }
 function closePage(id){ document.getElementById(id).classList.add('hide'); }
+/**
+ * その時刻（0時からの分）が日勤かどうか。
+ * ★サーバーの 日勤か_ と**同じ中身にしておくこと**（B5・B6・2026-08-19）。
+ *   開始>終了は「日をまたぐ」（22:00〜6:00）。ずれていないかは検査で見張っている
+ */
+function 日勤か_(m, a, b){
+  if(a === b) return false;
+  if(a < b) return m >= a && m < b;
+  return m >= a || m < b;
+}
 /** いま「自動」だとどちらで記録されるかを出す（18時ちょうどから夜勤になるため） */
 function いまの勤務帯_(){
   var c = ST.conf || {};
   if(c.日勤開始 == null || c.日勤終了 == null) return null;
   var d = new Date();
   var m = d.getHours()*60 + d.getMinutes();
-  return (m >= c.日勤開始 && m < c.日勤終了) ? '日勤' : '夜勤';
+  return 日勤か_(m, c.日勤開始, c.日勤終了) ? '日勤' : '夜勤';
 }
 function 分を時刻_(m){
   if(m == null) return '';
