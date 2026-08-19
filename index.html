@@ -61,7 +61,9 @@
         padding:14px; margin-bottom:10px; box-shadow:var(--sh); position:relative;}
   .card.tap{cursor:pointer; padding-right:34px;}
   .card.tap:active{background:#f3f8f7;}
-  .card.hi{border-left:4px solid #dc2626;}          /* 重要な申し送り */
+  /* 重要な申し送り。★赤い縦線はやめた（本人の判断・2026-08-19）。
+     いまは「重要」の小さな印だけで知らせる。勝手に赤へ戻さないこと */
+  .card.hi{}
   /* 「>」は transform で真ん中に寄せると半端な位置に落ちてにじむ。高さを決めて計算で置く */
   .chev{position:absolute; right:12px; top:calc(50% - 11px); height:22px; line-height:22px;
         color:#9aa7b1; font-size:22px;}
@@ -83,7 +85,8 @@
   .chip{background:var(--chip); color:#465967; border-radius:7px; padding:3px 9px; font-size:12px;}
   .chip.user{background:#e8f0fc; color:#1a4f8a;}
   .chip.todo{background:#fdf0dd; color:var(--todo); font-weight:700;}
-  .chip.high{background:#fdeaea; color:var(--warn); font-weight:700;}
+  /* ★赤はやめた（本人の判断）。落ち着いた琥珀色で「重要」だけ知らせる */
+  .chip.high{background:#fdf2df; color:#96660f; font-weight:700;}
   .chip.fix{background:#f1ece5; color:#7a6448;}
   .foot{margin-top:10px; padding-top:9px; border-top:1px solid #f0f3f5;
         font-size:12px; color:var(--sub); display:flex; gap:14px; flex-wrap:wrap;}
@@ -458,12 +461,15 @@ function 切れた(e){
  *   ms_maegai … 前回の一覧（**申し送りの本文が入っている**）。外に置いた画面だけが使う
  */
 // ---- ここから：他の職員が書いたものを届ける ----
-// 間隔を短くするほど、全員のスマホからサーバーへの往復が増える。
-// このツールは無料の範囲で動かすので、ふだんは3分に1回だけ「そっと」見に行き、
-// 人が画面に戻ってきたときは、その場で取り直す（そちらが本命）。
-var 自動で見に行く間隔ミリ秒 = 180000;   // 3分
+// 一覧を開きっぱなしにしていても、押さずに新しい申し送りが出るようにする。
+// ★ただし「入れ替える」のではなく「上に足す」。さらに足したぶんの高さだけ画面をずらして
+//   打ち消すので、読んでいる途中でも位置が動かない。
+// 間隔を短くするほど、全員のスマホからサーバーへの往復が増える（無料の範囲で動かすため）。
+var 自動で見に行く間隔ミリ秒 = 60000;    // 1分
 var 見送る間隔ミリ秒 = 20000;            // 直前に取ったばかりなら見送る（往復のむだ打ちよけ）
+var 知らせを出す秒数 = 6;                // 「◯件 届きました」を出しておく長さ
 var 最後に取った時刻 = 0;
+var 知らせを消す番号 = null;
 
 /** いま「申し送り一覧」が実際に見えているか（上に別の画面が開いていたら見えていない） */
 function 一覧を見ているか(){
@@ -477,43 +483,79 @@ function 一覧を見ているか(){
   return true;
 }
 
-/** 新しいものが来ていないか、そっと見に行く。★画面は入れ替えない（読んでいる途中で飛ばないため） */
+/** 新しいものが来ていないか、そっと見に行く（画面が隠れている間は行かない＝むだな往復をしない） */
 function そっと見に行く(){
-  if(!ST.token || ST.busy || !一覧を見ているか()) return;
+  if(!ST.token || ST.busy || document.hidden || !一覧を見ているか()) return;
   if(Date.now() - 最後に取った時刻 < 見送る間隔ミリ秒) return;
   ST.busy = true;
   call('一覧取得', ST.token, { tab: ST.tab }).then(function(r){
     ST.busy = false;
     最後に取った時刻 = Date.now();
-    ST.新着 = r;
-    var いま出ている = {};
-    (ST.一覧 || []).forEach(function(x){ いま出ている[String(x.id)] = true; });
-    var 数 = (r.items || []).filter(function(x){ return !いま出ている[String(x.id)]; }).length;
-    新着の帯(数);
+    届いたぶんを足す(r);
   }).catch(function(){ ST.busy = false; });   // 取れなくても黙って次の回に回す（表示は前のまま）
 }
 
-/** 「新しい申し送りが◯件あります」の帯を出し入れする */
-function 新着の帯(数){
-  var 帯 = document.getElementById('newBar');
-  if(!帯) return;
-  if(数 > 0){
-    document.getElementById('newBarText').textContent = '新しい申し送りが ' + 数 + '件 あります';
-    帯.classList.remove('hide');
-  } else {
-    帯.classList.add('hide');
+/**
+ * 届いたぶんを、いま出ている一覧の「上に足す」。
+ * ★読んでいる途中で位置が動かないよう、足したぶんの高さだけ画面をずらして打ち消す。
+ *   （丸ごと作り直すと、読んでいた場所が分からなくなる）
+ */
+function 届いたぶんを足す(r){
+  var 届いた = r && r.items ? r.items : [];
+  var いま出ている = {};
+  (ST.一覧 || []).forEach(function(x){ いま出ている[String(x.id)] = true; });
+  var 新しい = 届いた.filter(function(x){ return !いま出ている[String(x.id)]; });
+  if(!新しい.length) return;
+
+  // 取ってきた1ページぶんが丸ごと新しい＝その先にも抜けがあるかもしれないので、作り直す
+  if(新しい.length >= 届いた.length){
+    ST.cursor = null;
+    document.getElementById('list').innerHTML = '';
+    一覧を描く(r);
+    知らせる(新しい.length);
+    return;
+  }
+
+  var 箱 = document.getElementById('list');
+  // ★「いま読んでいるカード」そのものを目印にして、それが画面上で動かないようにする。
+  //   高さの引き算だと、あとから出す「◯件 届きました」の帯のぶんがずれる（実際に1枚ぶんずれた）。
+  var 目印 = null, 目印の位置 = 0;
+  var いまのカード = 箱.querySelectorAll('.card');
+  for(var i = 0; i < いまのカード.length; i++){
+    if(いまのカード[i].getBoundingClientRect().top >= 0){
+      目印 = いまのカード[i];
+      目印の位置 = 目印.getBoundingClientRect().top;
+      break;
+    }
+  }
+  箱.insertAdjacentHTML('afterbegin', 新しい.map(cardHtml).join(''));
+  ST.一覧 = 新しい.concat(ST.一覧 || []);
+  知らせる(新しい.length);   // 帯もここで出す（場所を取るので、ずらすのはこのあと）
+  // 先頭を見ている人はそのまま（新しいものが目に入る）。読んでいる途中の人は位置を保つ
+  if(window.scrollY > 40 && 目印){
+    var ずれ = 目印.getBoundingClientRect().top - 目印の位置;
+    if(ずれ) window.scrollBy(0, ずれ);
   }
 }
 
-/** 帯を押したとき＝すでに手元にある新しい一覧をそのまま出すので、待ち時間ゼロ */
+/** 「◯件 届きました」を少しの間だけ出す。★一覧はもう新しくなっている（押す必要はない） */
+function 知らせる(数){
+  var 帯 = document.getElementById('newBar');
+  if(!帯 || !(数 > 0)) return;
+  document.getElementById('newBarText').textContent = '新しい申し送りが ' + 数 + '件 届きました';
+  帯.classList.remove('hide');
+  if(知らせを消す番号) clearTimeout(知らせを消す番号);
+  知らせを消す番号 = setTimeout(知らせを消す, 知らせを出す秒数 * 1000);
+}
+function 知らせを消す(){
+  if(知らせを消す番号){ clearTimeout(知らせを消す番号); 知らせを消す番号 = null; }
+  var 帯 = document.getElementById('newBar');
+  if(帯) 帯.classList.add('hide');
+}
+
+/** 知らせを押したとき＝一覧はもう新しいので、いちばん上へ連れて行くだけ */
 function 新着を見せる(){
-  var r = ST.新着;
-  新着の帯(0);
-  if(!r){ 裏で更新(); return; }   // 手元に無ければ取りに行く
-  ST.新着 = null;
-  ST.cursor = null;
-  document.getElementById('list').innerHTML = '';
-  一覧を描く(r);
+  知らせを消す();
   window.scrollTo(0, 0);
 }
 
@@ -700,8 +742,7 @@ function loadMore(){
 function 一覧を描く(r){
   ST.busy = false;
   最後に取った時刻 = Date.now();
-  // 先頭から取り直したとき＝もう新着ではないので、知らせを消す
-  if(!ST.cursor){ ST.新着 = null; 新着の帯(0); }
+  if(!ST.cursor) 知らせを消す();   // 先頭から取り直した＝もう知らせるものはない
   document.getElementById('listLoading').classList.add('hide');
   show('listMsg','');
   var box = document.getElementById('list');
@@ -887,7 +928,7 @@ function 裏で更新(){
     document.getElementById('list').innerHTML = '';
     一覧を描く(r);
     show('listMsg','');
-    ST.新着 = null; 新着の帯(0);
+    知らせを消す();
   }).catch(function(e){
     ST.busy = false;
     if(切れた(e)) return;
