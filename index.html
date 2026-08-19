@@ -1137,38 +1137,52 @@ function setAdm(t){
   var 失敗 = function(e){ if(!切れた(e)){ box.innerHTML=''; show('admMsg', (e && e.message)); } };
 
   if(t==='staff') call('管理_職員一覧', ST.token).then(function(rows){
-    box.innerHTML = rows.map(function(s){
+    // 在職の人だけを普通に並べ、退職・異動はたたんで隠す（2026-08-20）
+    var 在職 = [], 退職 = [];
+    for(var i=0; i<rows.length; i++){ (rows[i].在職==='在職' ? 在職 : 退職).push(rows[i]); }
+    var 一人 = function(s){
       var id = esc(s.id);
-      return '<div class="list-item"><b>'+esc(s.氏名)+'</b>（'+esc(s.権限)+'／'+esc(s.在職)+'）'
+      var 現役 = (s.在職==='在職');
+      return '<div class="list-item"' + (現役 ? '' : ' style="opacity:.55;"') + '>'
+        + '<b>'+esc(s.氏名)+'</b>（'+esc(s.権限)+(現役 ? '' : '／'+esc(s.在職))+'）'
         + (s.ロック中 ? ' <span style="color:#c0392b">ロック中</span>' : '')
         + '<div class="sp"></div>'
-        + '<button class="btn gray" style="margin:0; padding:8px; font-size:13px;" onclick="admPin(\''+id+'\')">PIN再発行</button>'
-        + '<div class="sp"></div>'
-        + '<button class="btn gray" style="margin:0; padding:8px; font-size:13px;" onclick="admStaff(\''+id+'\',\'在職\',\''+(s.在職==='在職'?'退職・異動':'在職')+'\')">'
-        + (s.在職==='在職' ? '退職・異動にする（ログイン不可）' : '在職に戻す') + '</button>'
+        + (現役 ? '<button class="btn gray" style="margin:0; padding:8px; font-size:13px;" onclick="admPin(\''+id+'\')">PIN再発行</button><div class="sp"></div>' : '')
+        + '<button class="btn gray" style="margin:0; padding:8px; font-size:13px;" onclick="admStaff(\''+id+'\',\'在職\',\''+(現役?'退職・異動':'在職')+'\')">'
+        + (現役 ? '退職・異動にする（ログイン不可）' : '在職に戻す') + '</button>'
         + (s.ロック中 ? '<div class="sp"></div><button class="btn gray" style="margin:0; padding:8px; font-size:13px;" onclick="admUnlock(\''+id+'\')">ロック解除</button>' : '')
-        + '<div class="sp"></div>'
-        + '<button class="btn gray" style="margin:0; padding:8px; font-size:13px;" onclick="admQrReset(\''+id+'\')">QRを作り直す（今のカードが使えなくなります）</button>'
+        + (現役 ? '<div class="sp"></div><button class="btn gray" style="margin:0; padding:8px; font-size:13px;" onclick="admQrReset(\''+id+'\')">QRを作り直す（今のカードが使えなくなります）</button>' : '')
         + '</div>';
-    }).join('') + '<button class="btn" onclick="admAddStaff()">職員を追加する</button>';
+    };
+    box.innerHTML = '<button class="btn" onclick="admAddStaff()">職員を追加する</button>'
+      + '<div class="note">在職 '+在職.length+'名</div>'
+      + 在職.map(一人).join('')
+      + たたんで見せる('staffOld', '退職・異動 '+退職.length+'名', 退職.map(一人).join(''), 退職.length);
   }).catch(失敗);
 
   if(t==='user') call('利用者一覧', ST.token).then(function(rows){
-    // 在籍の人を先に、退去した人はうすく後ろへ
+    // 在籍の人だけを部屋の順に並べ、退去した人はたたんで隠す（2026-08-20）
     var 並び = rows.slice().sort(function(a,b){
-      if((a.在籍==='在籍') !== (b.在籍==='在籍')) return (a.在籍==='在籍') ? -1 : 1;
       return String(a.部屋||'').localeCompare(String(b.部屋||''));
     });
     ST.利用者元 = {};
-    box.innerHTML = 並び.map(function(u){
-      ST.利用者元[u.id] = u;
-      var 退去 = (u.在籍 !== '在籍');
-      return '<div class="list-item"' + (退去 ? ' style="opacity:.55;"' : '') + '>'
-        + '<b>'+esc(u.氏名)+'</b>　'+esc(u.よみ||'')+'　'+esc(u.部屋||'')+'　'+esc(u.在籍)
+    var 在籍 = [], 退去 = [];
+    for(var i=0; i<並び.length; i++){
+      ST.利用者元[並び[i].id] = 並び[i];
+      (並び[i].在籍==='在籍' ? 在籍 : 退去).push(並び[i]);
+    }
+    var 一人 = function(u){
+      var 出た = (u.在籍 !== '在籍');
+      return '<div class="list-item"' + (出た ? ' style="opacity:.55;"' : '') + '>'
+        + '<b>'+esc(u.氏名)+'</b>　'+esc(u.よみ||'')+'　'+esc(u.部屋||'')+(出た ? '　'+esc(u.在籍) : '')
         + '<div class="sp"></div>'
         + '<button class="btn gray" style="margin:0; padding:8px; font-size:13px;" onclick="admEditUser(\''+esc(safeId(u.id))+'\')">直す</button>'
         + '</div>';
-    }).join('') + '<button class="btn" onclick="admAddUser()">利用者を追加する</button>';
+    };
+    box.innerHTML = '<button class="btn" onclick="admAddUser()">利用者を追加する</button>'
+      + '<div class="note">在籍 '+在籍.length+'名</div>'
+      + 在籍.map(一人).join('')
+      + たたんで見せる('userOld', '退去 '+退去.length+'名', 退去.map(一人).join(''), 退去.length);
   }).catch(失敗);
 
   if(t==='hidden') call('管理_非表示一覧', ST.token).then(function(rows){
@@ -1307,6 +1321,25 @@ function admEditUser(id){
       show('admMsg', res && res.変えなかった ? '変わっていません' : '直しました', 'ok');
     })
     .catch(function(e){ if(!切れた(e)) show('admMsg', (e && e.message)); });
+}
+/**
+ * 退職・退去した人を「▶ 退職・異動 3名（押すと開きます）」の1行にたたむ（2026-08-20）。
+ * 中身は先に作って隠してあるだけなので、開いてもサーバーには行かない＝待ち時間ゼロ。
+ * ★消しているのではない。開けばこれまでどおり「在職に戻す」「直す」ができる。
+ */
+function たたんで見せる(id, 見出し, 中身, 件数){
+  if(!件数) return '';
+  return '<div class="list-item" style="cursor:pointer;" data-open="'+id+'" data-label="'+esc(見出し)+'" onclick="たたみを開く(this)">▶ '+esc(見出し)+'（押すと開きます）</div>'
+    + '<div id="'+id+'" style="display:none;">' + 中身 + '</div>';
+}
+/** たたんだところを開け閉めする */
+function たたみを開く(見出し){
+  var 中身 = document.getElementById(見出し.getAttribute('data-open'));
+  if(!中身) return;
+  var 開く = (中身.style.display === 'none');
+  中身.style.display = 開く ? '' : 'none';
+  見出し.textContent = (開く ? '▼ ' : '▶ ') + 見出し.getAttribute('data-label')
+    + (開く ? '（押すと閉じます）' : '（押すと開きます）');
 }
 function admPin(id){
   var p = prompt('新しいPIN（4〜8桁の数字。管理者は6桁以上を推奨）'); if(!p) return;
