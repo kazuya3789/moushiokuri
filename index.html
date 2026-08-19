@@ -87,6 +87,16 @@
   .chip.fix{background:#f1ece5; color:#7a6448;}
   .foot{margin-top:10px; padding-top:9px; border-top:1px solid #f0f3f5;
         font-size:12px; color:var(--sub); display:flex; gap:14px; flex-wrap:wrap;}
+  /* ===== 「新しい申し送りがあります」の帯 =====
+     一覧の上に貼りついて出る。押すまで画面は入れ替わらない（読んでいる途中で飛ばないため） */
+  .newbar{position:sticky; top:64px; z-index:15; margin:0 0 10px; cursor:pointer;
+          background:var(--main); color:#fff; border-radius:999px;
+          padding:11px 18px; font-size:14px; font-weight:700;
+          display:flex; align-items:center; justify-content:space-between; gap:12px;
+          box-shadow:0 4px 14px rgba(13,97,84,.32);}
+  .newbar:active{background:var(--main-d);}
+  .newbar-go{opacity:.85; font-weight:400; white-space:nowrap;}
+
   .more{width:100%; padding:14px; border:1px dashed #cdd7dd; background:#fff; color:var(--main);
         border-radius:12px; font-size:15px; font-weight:700;}
   .fab{position:fixed; right:18px; bottom:22px; z-index:30; width:60px; height:60px; border-radius:50%;
@@ -226,6 +236,9 @@
   <div class="wrap">
     <div class="pagehead"><h1>申し送り一覧</h1><p>職員間の大切な情報を時系列で確認できます</p></div>
     <div id="listMsg" class="msg"></div>
+    <div id="newBar" class="newbar hide" onclick="新着を見せる()">
+      <span id="newBarText"></span><span class="newbar-go">見る ↑</span>
+    </div>
     <div id="list"></div>
     <div id="listLoading" class="loading hide">読み込み中…</div>
     <button id="moreBtn" class="more hide" onclick="loadMore()">さらに読み込む</button>
@@ -260,9 +273,6 @@
           <select id="postLevel"><option>ふつう</option><option>高</option><option>低</option></select>
         </div>
       </div>
-      <label class="check"><input type="checkbox" id="postTodo">対応が必要</label>
-      <label>対応期限</label>
-      <input id="postDue" type="date">
     </details>
     <label>写真・動画（あとから追加もできます）</label>
     <input id="postFiles" type="file" accept="image/*,video/*" multiple onchange="ファイルを選んだ()">
@@ -313,8 +323,6 @@
     </div>
     <label>分類</label>
     <select id="sCat"><option value="">（すべて）</option></select>
-    <label>状態</label>
-    <select id="sState"><option value="">すべて</option><option value="未対応">未対応のみ</option><option value="対応済み">対応済みのみ</option></select>
     <label class="check"><input type="checkbox" id="sUnread">自分がまだ確認していないものだけ</label>
     <button class="btn" id="searchBtn" onclick="doSearch()">検索する</button>
     <button class="btn gray" onclick="clearSearch()">条件をクリア</button>
@@ -449,6 +457,81 @@ function 切れた(e){
  *   ms_token  … 合言葉
  *   ms_maegai … 前回の一覧（**申し送りの本文が入っている**）。外に置いた画面だけが使う
  */
+// ---- ここから：他の職員が書いたものを届ける ----
+// 間隔を短くするほど、全員のスマホからサーバーへの往復が増える。
+// このツールは無料の範囲で動かすので、ふだんは3分に1回だけ「そっと」見に行き、
+// 人が画面に戻ってきたときは、その場で取り直す（そちらが本命）。
+var 自動で見に行く間隔ミリ秒 = 180000;   // 3分
+var 見送る間隔ミリ秒 = 20000;            // 直前に取ったばかりなら見送る（往復のむだ打ちよけ）
+var 最後に取った時刻 = 0;
+
+/** いま「申し送り一覧」が実際に見えているか（上に別の画面が開いていたら見えていない） */
+function 一覧を見ているか(){
+  var m = document.getElementById('main');
+  if(!m || m.classList.contains('hide')) return false;
+  var 上に開く画面 = ['loginPage','postPage','detailPage','searchPage','resultPage','menuPage','adminPage'];
+  for(var i = 0; i < 上に開く画面.length; i++){
+    var e = document.getElementById(上に開く画面[i]);
+    if(e && !e.classList.contains('hide')) return false;
+  }
+  return true;
+}
+
+/** 新しいものが来ていないか、そっと見に行く。★画面は入れ替えない（読んでいる途中で飛ばないため） */
+function そっと見に行く(){
+  if(!ST.token || ST.busy || !一覧を見ているか()) return;
+  if(Date.now() - 最後に取った時刻 < 見送る間隔ミリ秒) return;
+  ST.busy = true;
+  call('一覧取得', ST.token, { tab: ST.tab }).then(function(r){
+    ST.busy = false;
+    最後に取った時刻 = Date.now();
+    ST.新着 = r;
+    var いま出ている = {};
+    (ST.一覧 || []).forEach(function(x){ いま出ている[String(x.id)] = true; });
+    var 数 = (r.items || []).filter(function(x){ return !いま出ている[String(x.id)]; }).length;
+    新着の帯(数);
+  }).catch(function(){ ST.busy = false; });   // 取れなくても黙って次の回に回す（表示は前のまま）
+}
+
+/** 「新しい申し送りが◯件あります」の帯を出し入れする */
+function 新着の帯(数){
+  var 帯 = document.getElementById('newBar');
+  if(!帯) return;
+  if(数 > 0){
+    document.getElementById('newBarText').textContent = '新しい申し送りが ' + 数 + '件 あります';
+    帯.classList.remove('hide');
+  } else {
+    帯.classList.add('hide');
+  }
+}
+
+/** 帯を押したとき＝すでに手元にある新しい一覧をそのまま出すので、待ち時間ゼロ */
+function 新着を見せる(){
+  var r = ST.新着;
+  新着の帯(0);
+  if(!r){ 裏で更新(); return; }   // 手元に無ければ取りに行く
+  ST.新着 = null;
+  ST.cursor = null;
+  document.getElementById('list').innerHTML = '';
+  一覧を描く(r);
+  window.scrollTo(0, 0);
+}
+
+/**
+ * 画面に戻ってきたとき（他のアプリから戻った・画面をつけた・別の画面から一覧に戻った）。
+ * このときは人が「いま見に来たところ」なので、帯を出さずそのまま最新に入れ替えてよい。
+ */
+function 戻ってきた(){
+  if(!ST.token || !一覧を見ているか()) return;
+  if(Date.now() - 最後に取った時刻 < 見送る間隔ミリ秒) return;
+  裏で更新();
+}
+document.addEventListener('visibilitychange', function(){ if(!document.hidden) 戻ってきた(); });
+window.addEventListener('pageshow', function(){ 戻ってきた(); });
+window.addEventListener('focus', function(){ 戻ってきた(); });
+setInterval(そっと見に行く, 自動で見に行く間隔ミリ秒);
+// ---- ここまで ----
+
 function 端末の控えを消す_(){
   記憶.del('ms_token');
   記憶.del('ms_maegai');
@@ -616,6 +699,9 @@ function loadMore(){
 }
 function 一覧を描く(r){
   ST.busy = false;
+  最後に取った時刻 = Date.now();
+  // 先頭から取り直したとき＝もう新着ではないので、知らせを消す
+  if(!ST.cursor){ ST.新着 = null; 新着の帯(0); }
   document.getElementById('listLoading').classList.add('hide');
   show('listMsg','');
   var box = document.getElementById('list');
@@ -635,7 +721,6 @@ function cardHtml(d){
   if(d.利用者名) chips += '<span class="chip user">'+esc(d.利用者名)+'</span>';
   if(d.分類) chips += '<span class="chip">'+esc(d.分類)+'</span>';
   if(d.重要度==='高') chips += '<span class="chip high">重要</span>';
-  if(d.要対応) chips += '<span class="chip todo">'+(d.対応状況==='対応済み'?'対応済み':'要対応')+'</span>';
   if(d.訂正一致) chips += '<span class="chip fix">訂正・追記が一致</span>';
   if(d.添付数) chips += '<span class="chip">📎写真・動画'+d.添付数+'</span>';
   var body = String(d.本文||'');
@@ -734,9 +819,7 @@ function doPost(){
     分類: document.getElementById('postCat').value,
     重要度: document.getElementById('postLevel').value,
     勤務帯: document.getElementById('postShift').value,
-    送り直し: (送信回数 > 1),
-    要対応: document.getElementById('postTodo').checked,
-    対応期限: document.getElementById('postDue').value
+    送り直し: (送信回数 > 1)
   }, 受付ID).then(function(id){
     btn.textContent='写真・動画を送信中…';
     return 添付をまとめて送る(id);
@@ -744,8 +827,6 @@ function doPost(){
     btn.disabled=false; btn.textContent='送信する';
     document.getElementById('postUser').value='';
     document.getElementById('postCat').value='';
-    document.getElementById('postTodo').checked=false;
-    document.getElementById('postDue').value='';
     document.getElementById('postBody').value='';
     closePage('postPage');
     reload();
@@ -806,6 +887,7 @@ function 裏で更新(){
     document.getElementById('list').innerHTML = '';
     一覧を描く(r);
     show('listMsg','');
+    ST.新着 = null; 新着の帯(0);
   }).catch(function(e){
     ST.busy = false;
     if(切れた(e)) return;
@@ -820,7 +902,6 @@ function renderDetail(r){
   if(d.利用者名) chips += '<span class="chip user">'+esc(d.利用者名)+'</span>';
   if(d.分類) chips += '<span class="chip">'+esc(d.分類)+'</span>';
   if(d.重要度==='高') chips += '<span class="chip high">重要</span>';
-  if(d.要対応) chips += '<span class="chip todo">'+(d.対応状況==='対応済み'?'対応済み '+esc(d.対応情報):'要対応'+(d.対応期限?'（期限 '+esc(d.対応期限)+'）':''))+'</span>';
   if(chips) h += '<div class="chips">'+chips+'</div>';
   if(r.修正回数) h += '<div class="note">※この記録は投稿直後に'+r.修正回数+'回修正されています（変更前の全文は版履歴に保存）</div>';
   h += '</div>';
@@ -834,8 +915,6 @@ function renderDetail(r){
 
   h += '<button class="btn sub" onclick="openAddBox(\'追記\')">追記する</button>';
   h += '<button class="btn sub" onclick="openAddBox(\'訂正\')">訂正する</button>';
-  if(d.要対応 && d.対応状況 !== '対応済み')
-    h += '<button class="btn" id="doneBtn" onclick="doDone()">対応済みにする</button>';
   if(r.自己修正可)
     h += '<button class="btn gray" onclick="openSelfEdit()">自分の記載を修正する（投稿直後のみ）</button>';
   if(r.管理者 || (ST.me && String(d.記載者ID) === String(ST.me.id))){
@@ -888,16 +967,6 @@ function doAdd(){
       show('detailMsg', (e && e.message) || '保存できませんでした');
     });
 }
-function doDone(){
-  var btn = document.getElementById('doneBtn');
-  if(btn){ btn.disabled = true; btn.textContent = '処理中…'; }
-  call('対応済みにする', ST.token, ST.detailId)
-    .then(function(r){
-      if(r && r.済み) show('detailMsg','すでに他の職員が対応済みにしています（'+esc(r.対応者)+'）','ok');
-      openDetail(ST.detailId);
-    })
-    .catch(function(e){ if(!切れた(e)) show('detailMsg', (e && e.message)); });
-}
 function openSelfEdit(){
   var t = prompt('修正後の内容を入力してください（変更前の文は履歴として保存されます）', '');
   if(t===null || !t.trim()) return;
@@ -916,7 +985,7 @@ function doHide(){
 // ===== 検索 =====
 function openSearch(){ document.getElementById('searchPage').classList.remove('hide'); }
 function clearSearch(){
-  ['sUser','sTarget','sFrom','sTo','sWord','sShift','sLevel','sCat','sState'].forEach(function(id){
+  ['sUser','sTarget','sFrom','sTo','sWord','sShift','sLevel','sCat'].forEach(function(id){
     document.getElementById(id).value='';
   });
   document.getElementById('sUnread').checked=false;
@@ -939,7 +1008,6 @@ function doSearch(){
     勤務帯: document.getElementById('sShift').value,
     重要度: document.getElementById('sLevel').value,
     分類: document.getElementById('sCat').value,
-    対応状況: document.getElementById('sState').value,
     未確認: document.getElementById('sUnread').checked
   };
   var btn = document.getElementById('searchBtn');
