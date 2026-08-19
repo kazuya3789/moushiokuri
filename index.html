@@ -84,7 +84,8 @@
   .chips{display:flex; flex-wrap:wrap; gap:6px; margin-top:8px;}
   .chip{background:var(--chip); color:#465967; border-radius:7px; padding:3px 9px; font-size:12px;}
   .chip.user{background:#e8f0fc; color:#1a4f8a;}
-  .chip.todo{background:#fdf0dd; color:var(--todo); font-weight:700;}
+  /* .chip.todo は「要対応」を画面から外した（2026-08-19）ので使っていない。
+     戻すときは cardHtml と詳細の chips に足し直す */
   /* ★赤はやめた（本人の判断）。落ち着いた琥珀色で「重要」だけ知らせる */
   .chip.high{background:#fdf2df; color:#96660f; font-weight:700;}
   .chip.fix{background:#f1ece5; color:#7a6448;}
@@ -92,7 +93,9 @@
         font-size:12px; color:var(--sub); display:flex; gap:14px; flex-wrap:wrap;}
   /* ===== 「新しい申し送りがあります」の帯 =====
      一覧の上に貼りついて出る。押すまで画面は入れ替わらない（読んでいる途中で飛ばないため） */
-  .newbar{position:sticky; top:64px; z-index:15; margin:0 0 10px; cursor:pointer;
+  /* ★止まる位置は「上の帯の高さ」から決める。決め打ちにすると、施設名が2行になったときや
+     パソコン幅で高さが変わったときに重なる（64px決め打ちで実際に6px重なっていた） */
+  .newbar{position:sticky; top:calc(var(--headH, 70px) + 8px); z-index:15; margin:0 0 10px; cursor:pointer;
           background:var(--main); color:#fff; border-radius:999px;
           padding:11px 18px; font-size:14px; font-weight:700;
           display:flex; align-items:center; justify-content:space-between; gap:12px;
@@ -139,8 +142,8 @@
   .msg.ok{background:#e9f4f0; border:1px solid #c6e2da; color:var(--main-d); display:block;}
   .notice{background:#fdf6e8; border:1px solid #f0dcaa; color:#8a6417; border-radius:10px;
           padding:11px 13px; font-size:13px; margin:12px 0; display:flex; gap:9px; align-items:flex-start;}
-  .info{background:#eff5fd; border:1px solid #d5e3f6; color:#2a5580; border-radius:10px;
-        padding:11px 13px; font-size:13px; margin:12px 0; display:flex; gap:9px; align-items:flex-start;}
+  /* .info（薄い青の知らせ箱）は、いまどこからも使っていないので置いていない。
+     使うときは .notice と同じ形で足す */
 
   .empty{text-align:center; color:var(--sub); padding:48px 10px;}
   .blk{border-left:4px solid var(--line); padding:2px 0 2px 12px; margin:14px 0;}
@@ -488,11 +491,19 @@ function そっと見に行く(){
   if(!ST.token || ST.busy || document.hidden || !一覧を見ているか()) return;
   if(Date.now() - 最後に取った時刻 < 見送る間隔ミリ秒) return;
   ST.busy = true;
-  call('一覧取得', ST.token, { tab: ST.tab }).then(function(r){
+  // ★自動:true ＝「人が触ったのではない」とサーバーに伝える。
+  //   これを伝えないと、共有端末の無操作ログアウトが永久に来なくなる
+  call('一覧取得', ST.token, { tab: ST.tab, 自動: true }).then(function(r){
     ST.busy = false;
     最後に取った時刻 = Date.now();
     届いたぶんを足す(r);
-  }).catch(function(){ ST.busy = false; });   // 取れなくても黙って次の回に回す（表示は前のまま）
+  }).catch(function(e){
+    ST.busy = false;
+    // ★合言葉が切れていたら、黙って古い一覧を見せ続けない（ログイン画面へ戻す）。
+    //   共有端末はしばらく操作がないと自動でログアウトするので、実際に起きる。
+    if(切れた(e)) return;
+    // それ以外（つながらない等）は黙って次の回に回す（表示は前のまま）
+  });
 }
 
 /**
@@ -524,16 +535,22 @@ function 届いたぶんを足す(r){
   for(var i = 0; i < いまのカード.length; i++){
     if(いまのカード[i].getBoundingClientRect().top >= 0){
       目印 = いまのカード[i];
-      目印の位置 = 目印.getBoundingClientRect().top;
       break;
     }
   }
+  // ★1枚も見つからないとき（いちばん下まで読んでいて、最後のカードが画面より背が高い等）は
+  //   最後のカードを目印にする。目印が無いと打ち消しができず、位置が飛ぶ
+  if(!目印 && いまのカード.length) 目印 = いまのカード[いまのカード.length - 1];
+  if(目印) 目印の位置 = 目印.getBoundingClientRect().top;
+  var 前の高さ = document.documentElement.scrollHeight;   // 目印すら無いときの保険
   箱.insertAdjacentHTML('afterbegin', 新しい.map(cardHtml).join(''));
   ST.一覧 = 新しい.concat(ST.一覧 || []);
   知らせる(新しい.length);   // 帯もここで出す（場所を取るので、ずらすのはこのあと）
   // 先頭を見ている人はそのまま（新しいものが目に入る）。読んでいる途中の人は位置を保つ
-  if(window.scrollY > 40 && 目印){
-    var ずれ = 目印.getBoundingClientRect().top - 目印の位置;
+  if(window.scrollY > 40){
+    var ずれ = 目印
+      ? (目印.getBoundingClientRect().top - 目印の位置)
+      : (document.documentElement.scrollHeight - 前の高さ);
     if(ずれ) window.scrollBy(0, ずれ);
   }
 }
@@ -542,6 +559,7 @@ function 届いたぶんを足す(r){
 function 知らせる(数){
   var 帯 = document.getElementById('newBar');
   if(!帯 || !(数 > 0)) return;
+  ヘッダーの高さを測る();   // 出す直前に測る（読み込み時はまだ隠れていて高さ0のことがある）
   document.getElementById('newBarText').textContent = '新しい申し送りが ' + 数 + '件 届きました';
   帯.classList.remove('hide');
   if(知らせを消す番号) clearTimeout(知らせを消す番号);
@@ -568,6 +586,17 @@ function 戻ってきた(){
   if(Date.now() - 最後に取った時刻 < 見送る間隔ミリ秒) return;
   裏で更新();
 }
+/** 帯が上の帯（ヘッダー）のすぐ下で止まるよう、実際の高さを測って覚えておく */
+function ヘッダーの高さを測る(){
+  var h = document.querySelector('#main header');
+  if(!h) return;
+  var 高さ = Math.round(h.getBoundingClientRect().height);
+  if(高さ > 0) document.documentElement.style.setProperty('--headH', 高さ + 'px');
+}
+window.addEventListener('resize', ヘッダーの高さを測る);
+window.addEventListener('orientationchange', ヘッダーの高さを測る);
+window.addEventListener('load', ヘッダーの高さを測る);
+
 document.addEventListener('visibilitychange', function(){ if(!document.hidden) 戻ってきた(); });
 window.addEventListener('pageshow', function(){ 戻ってきた(); });
 window.addEventListener('focus', function(){ 戻ってきた(); });
@@ -608,6 +637,14 @@ window.addEventListener('load', function(){
     document.getElementById('list').innerHTML = '';
     始める();
   }).catch(function(e){
+    // ★つながらなかったときに、端末に残っていた前回の一覧（本文入り）を出したままにしない。
+    //   共有端末では、前の人の申し送りが次の人に見えたままになる（2026-08-19のレビューで判明）。
+    //   知らせもログイン画面側に出るので、一覧を出したままだと誰も気づけない。
+    端末の控えを消す_();
+    ST.token = null;
+    document.getElementById('list').innerHTML = '';
+    document.getElementById('main').classList.add('hide');
+    document.getElementById('loginPage').classList.remove('hide');
     show('loginMsg', '読み込めませんでした：' + ((e && e.message) || '') + '　もう一度開き直してください');
   });
 });
