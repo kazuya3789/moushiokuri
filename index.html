@@ -7,86 +7,198 @@
 <meta name="robots" content="noindex, nofollow">
 <link rel="icon" href="data:,">
 <style>
+  /* ===== 色の決まり =====
+     緑＝さわる所（ヘッダー・主なボタン）、紺＝見出し。
+     スマホでもパソコンでも同じ見た目になるよう、幅で並び方だけ変える。 */
   :root{
-    --bg:#f4f6f8; --card:#ffffff; --line:#dde3ea; --text:#1d2733; --sub:#67757f;
-    --main:#0f7b6c; --main-d:#0b5f54; --warn:#c0392b; --todo:#b7791f; --chip:#eef3f5;
+    --bg:#f7f8f9; --card:#ffffff; --line:#e5e9ec; --text:#1f2a37; --sub:#6b7784;
+    --navy:#14395e;                                  /* 見出しの濃紺 */
+    --main:#0d6154; --main-d:#094c42; --main-l:#e9f2f0;  /* 操作の緑 */
+    --warn:#c0392b; --todo:#b06f12; --chip:#eef2f4;
+    --day:#e8f0fd; --day-t:#2563a5;                  /* 日勤バッジ */
+    --night:#eeeafb; --night-t:#5b46b8;              /* 夜勤バッジ */
+    --sh:0 1px 2px rgba(16,40,60,.05);
+    --sh2:0 2px 10px rgba(16,40,60,.07);
+    --w:1080px;                                      /* パソコンでの本文の最大幅 */
   }
   *{box-sizing:border-box; -webkit-tap-highlight-color:transparent;}
-  body{margin:0; font-family:"Hiragino Kaku Gothic ProN","Meiryo",system-ui,sans-serif;
-       background:var(--bg); color:var(--text); font-size:16px; line-height:1.6;}
+  /* ★文字をはっきり出すための決まり（変えるときは理由も書き残すこと）
+     ・system-ui を先頭に置く＝その端末が本来使う文字（iPhone=ヒラギノ／Android=Noto／
+       Windows=Yu Gothic UI）が選ばれる。端末が「自分の画面用に調整した文字」がいちばん鮮明。
+     ・-webkit-font-smoothing:antialiased は入れない。iPhoneでは文字が細くなり、かえって薄く見える。
+     ・text-size-adjust:100% ＝ 画面の向きを変えたときに文字だけ勝手に拡大されるのを止める。 */
+  body{margin:0;
+       font-family:system-ui,-apple-system,"Hiragino Sans","Hiragino Kaku Gothic ProN",
+                   "Noto Sans JP","Yu Gothic UI","Meiryo",sans-serif;
+       background:var(--bg); color:var(--text); font-size:16px; line-height:1.6;
+       -webkit-text-size-adjust:100%; text-size-adjust:100%;}
   .hide{display:none !important;}
+
+  /* ===== 上の帯 ===== */
   header{position:sticky; top:0; z-index:20; background:var(--main); color:#fff;
-         padding:10px 12px; display:flex; align-items:center; gap:8px;}
-  header .title{font-weight:700; font-size:16px; flex:1; overflow:hidden; white-space:nowrap; text-overflow:ellipsis;}
-  header .who{font-size:12px; opacity:.9; display:block; font-weight:400;}
-  header button{background:rgba(255,255,255,.18); color:#fff; border:0; border-radius:8px;
-                padding:8px 10px; font-size:14px; white-space:nowrap;}
-  .wrap{padding:10px 10px 96px;}
-  .card{background:var(--card); border:1px solid var(--line); border-radius:12px;
-        padding:12px; margin-bottom:10px;}
-  .card.tap:active{background:#f0f5f4;}
-  .meta{display:flex; align-items:center; gap:8px; font-size:13px; color:var(--sub); margin-bottom:6px; flex-wrap:wrap;}
-  .dot{width:9px; height:9px; border-radius:50%; background:var(--main); flex:none;}
+         padding:12px max(12px, calc((100% - var(--w)) / 2)); display:flex; align-items:center; gap:10px;
+         box-shadow:0 1px 0 rgba(0,0,0,.06);}
+  header .title{font-weight:700; font-size:17px; letter-spacing:.02em; flex:1;
+                overflow:hidden; white-space:nowrap; text-overflow:ellipsis;}
+  header .who{font-size:12px; opacity:.82; display:block; font-weight:400; letter-spacing:0;}
+  header button{background:rgba(255,255,255,.14); color:#fff; border:1px solid rgba(255,255,255,.32);
+                border-radius:9px; padding:8px 12px; font-size:14px; white-space:nowrap; font-weight:600;}
+  header button:active{background:rgba(255,255,255,.28);}
+
+  /* ===== 画面の見出し（大きな題＋小さな説明） ===== */
+  .pagehead{margin:2px 0 14px;}
+  .pagehead h1{margin:0; font-size:26px; font-weight:700; color:var(--navy); letter-spacing:.01em;}
+  .pagehead p{margin:4px 0 0; font-size:13px; color:var(--sub);}
+  @media(min-width:760px){ .pagehead h1{font-size:30px;} .pagehead p{font-size:14px;} }
+  .sect{margin:20px 0 8px; font-size:13px; font-weight:700; color:var(--sub); letter-spacing:.06em;}
+
+  /* ===== 本文の入れ物 ===== */
+  .wrap{padding:16px 12px 96px; max-width:var(--w); margin:0 auto;}
+  .page .inner{padding:16px 12px 48px; max-width:var(--w); margin:0 auto;}
+
+  /* ===== カード ===== */
+  .card{background:var(--card); border:1px solid var(--line); border-radius:14px;
+        padding:14px; margin-bottom:10px; box-shadow:var(--sh); position:relative;}
+  .card.tap{cursor:pointer; padding-right:34px;}
+  .card.tap:active{background:#f3f8f7;}
+  .card.hi{border-left:4px solid #dc2626;}          /* 重要な申し送り */
+  /* 「>」は transform で真ん中に寄せると半端な位置に落ちてにじむ。高さを決めて計算で置く */
+  .chev{position:absolute; right:12px; top:calc(50% - 11px); height:22px; line-height:22px;
+        color:#9aa7b1; font-size:22px;}
+  .cardtop{display:flex; gap:11px; align-items:flex-start;}
+  .avatar{flex:none; width:36px; height:36px; border-radius:50%; background:var(--main-l);
+          color:var(--main); font-weight:700; font-size:15px;
+          display:flex; align-items:center; justify-content:center;}
+  .cardmain{flex:1; min-width:0;}
+  .meta{display:flex; align-items:center; gap:7px; font-size:13px; color:var(--sub);
+        margin-bottom:3px; flex-wrap:wrap;}
+  .meta .who{font-weight:700; color:var(--text); font-size:14px;}
+  .meta .sep{color:#c8d0d6;}
+  .dot{width:8px; height:8px; border-radius:50%; background:#e07a1a; flex:none;}
+  .shift{background:var(--day); color:var(--day-t); border-radius:6px; padding:1px 8px;
+         font-size:12px; font-weight:700;}
+  .shift.night{background:var(--night); color:var(--night-t);}
   .body{white-space:pre-wrap; word-break:break-word;}
   .chips{display:flex; flex-wrap:wrap; gap:6px; margin-top:8px;}
-  .chip{background:var(--chip); color:#3d4f5c; border-radius:6px; padding:3px 8px; font-size:12px;}
-  .chip.user{background:#e6f0fb; color:#1a4f8a;}
-  .chip.todo{background:#fdf1dc; color:var(--todo); font-weight:700;}
+  .chip{background:var(--chip); color:#465967; border-radius:7px; padding:3px 9px; font-size:12px;}
+  .chip.user{background:#e8f0fc; color:#1a4f8a;}
+  .chip.todo{background:#fdf0dd; color:var(--todo); font-weight:700;}
   .chip.high{background:#fdeaea; color:var(--warn); font-weight:700;}
-  .chip.fix{background:#f0ece6; color:#7a6448;}
-  .foot{margin-top:8px; font-size:12px; color:var(--sub); display:flex; gap:12px; flex-wrap:wrap;}
-  .more{width:100%; padding:14px; border:1px dashed var(--line); background:#fff; color:var(--main);
+  .chip.fix{background:#f1ece5; color:#7a6448;}
+  .foot{margin-top:10px; padding-top:9px; border-top:1px solid #f0f3f5;
+        font-size:12px; color:var(--sub); display:flex; gap:14px; flex-wrap:wrap;}
+  .more{width:100%; padding:14px; border:1px dashed #cdd7dd; background:#fff; color:var(--main);
         border-radius:12px; font-size:15px; font-weight:700;}
-  .fab{position:fixed; right:16px; bottom:20px; z-index:30; width:60px; height:60px; border-radius:50%;
-       background:var(--main); color:#fff; border:0; font-size:30px; box-shadow:0 4px 14px rgba(0,0,0,.25);}
+  .fab{position:fixed; right:18px; bottom:22px; z-index:30; width:60px; height:60px; border-radius:50%;
+       background:var(--main); color:#fff; border:0; font-size:30px; box-shadow:0 6px 18px rgba(13,97,84,.38);}
+  .fab:active{background:var(--main-d);}
+
   .page{position:fixed; inset:0; background:var(--bg); z-index:40; overflow-y:auto;}
   #resultPage{z-index:45;}
   #detailPage{z-index:50;}
-  .page .inner{padding:12px 12px 40px;}
-  label{display:block; font-size:13px; color:var(--sub); margin:12px 0 4px;}
-  input,select,textarea{width:100%; padding:12px; font-size:16px; border:1px solid var(--line);
-                        border-radius:10px; background:#fff; font-family:inherit;}
+
+  /* ===== 入力 ===== */
+  label{display:block; font-size:13px; color:var(--navy); font-weight:700; margin:14px 0 5px;}
+  input,select,textarea{width:100%; padding:12px 13px; font-size:16px; border:1px solid #d9e0e5;
+                        border-radius:10px; background:#fff; font-family:inherit; color:var(--text);}
+  input:focus,select:focus,textarea:focus{outline:0; border-color:var(--main);
+                        box-shadow:0 0 0 3px rgba(13,97,84,.13);}
   textarea{min-height:150px; resize:vertical;}
-  .btn{display:block; width:100%; padding:15px; background:var(--main); color:#fff; border:0;
-       border-radius:10px; font-size:17px; font-weight:700; margin-top:16px;}
-  .btn:active{background:var(--main-d);}
-  .btn:disabled{opacity:.6;}
-  .btn.sub{background:#fff; color:var(--main); border:1px solid var(--main);}
-  .btn.gray{background:#fff; color:var(--sub); border:1px solid var(--line);}
-  .btn.danger{background:#fff; color:var(--warn); border:1px solid #f0c6c1;}
+
+  /* ===== ボタン ===== */
+  .btn{display:block; width:100%; padding:15px; background:var(--main); color:#fff; border:1px solid var(--main);
+       border-radius:10px; font-size:17px; font-weight:700; margin-top:16px; cursor:pointer;
+       box-shadow:0 1px 2px rgba(13,97,84,.2);}
+  .btn:active{background:var(--main-d); border-color:var(--main-d);}
+  .btn:disabled{opacity:.55;}
+  .btn.sub{background:#fff; color:var(--main); border:1px solid var(--main); box-shadow:none;}
+  .btn.gray{background:#fff; color:var(--sub); border:1px solid #d9e0e5; box-shadow:none;}
+  .btn.danger{background:#fff; color:var(--warn); border:1px solid #eec4bf; box-shadow:none;}
   .row{display:flex; gap:8px;} .row>*{flex:1;}
-  details.opt{margin-top:14px; border:1px solid var(--line); border-radius:10px; background:#fff; padding:10px 12px;}
+
+  details.opt{margin-top:14px; border:1px solid var(--line); border-radius:12px; background:#fff;
+              padding:11px 13px; box-shadow:var(--sh);}
   details.opt summary{color:var(--main); font-weight:700; cursor:pointer;}
-  .msg{padding:10px 12px; border-radius:8px; margin:10px 0; font-size:14px; display:none;}
-  .msg.err{background:#fdeaea; color:var(--warn); display:block;}
-  .msg.ok{background:#e7f4ef; color:var(--main-d); display:block;}
-  .empty{text-align:center; color:var(--sub); padding:40px 10px;}
+
+  /* ===== 知らせの箱 ===== */
+  .msg{padding:11px 13px; border-radius:10px; margin:10px 0; font-size:14px; display:none;}
+  .msg.err{background:#fdeaea; border:1px solid #f3ccc7; color:var(--warn); display:block;}
+  .msg.ok{background:#e9f4f0; border:1px solid #c6e2da; color:var(--main-d); display:block;}
+  .notice{background:#fdf6e8; border:1px solid #f0dcaa; color:#8a6417; border-radius:10px;
+          padding:11px 13px; font-size:13px; margin:12px 0; display:flex; gap:9px; align-items:flex-start;}
+  .info{background:#eff5fd; border:1px solid #d5e3f6; color:#2a5580; border-radius:10px;
+        padding:11px 13px; font-size:13px; margin:12px 0; display:flex; gap:9px; align-items:flex-start;}
+
+  .empty{text-align:center; color:var(--sub); padding:48px 10px;}
   .blk{border-left:4px solid var(--line); padding:2px 0 2px 12px; margin:14px 0;}
   .blk.fix{border-color:var(--todo);} .blk.add{border-color:var(--main);}
-  .blk h4{margin:0 0 4px; font-size:14px;}
-  .list-item{background:#fff; border:1px solid var(--line); border-radius:10px; padding:10px 12px; margin-bottom:8px; font-size:14px;}
+  .blk h4{margin:0 0 4px; font-size:14px; color:var(--navy);}
+  .list-item{background:#fff; border:1px solid var(--line); border-radius:12px; padding:12px 13px;
+             margin-bottom:8px; font-size:14px; box-shadow:var(--sh);}
   .sp{height:8px;}
   .loading{text-align:center; padding:20px; color:var(--sub);}
-  h2{font-size:18px; margin:6px 0 0;}
+  h2{font-size:22px; margin:6px 0 0; color:var(--navy); font-weight:700;}
   .note{font-size:12px; color:var(--sub); margin-top:6px;}
   .count{font-size:12px; color:var(--warn); text-align:right; margin-top:4px;}
-  .check{display:flex; align-items:center; gap:8px; font-size:14px; color:var(--text); margin-top:14px;}
-  .check input{width:auto; margin:0;}
-  .adm-tabs{display:flex; gap:6px; overflow-x:auto; margin:10px 0;}
-  .adm-tabs button{white-space:nowrap; border:1px solid var(--line); background:#fff; color:var(--sub);
-                   border-radius:999px; padding:6px 12px; font-size:13px;}
+  .check{display:flex; align-items:center; gap:9px; font-size:14px; color:var(--text); margin-top:14px;
+         font-weight:400;}
+  .check input{width:auto; margin:0; accent-color:var(--main);}
+
+  /* ===== 管理画面のタブ ===== */
+  .adm-tabs{display:flex; gap:6px; overflow-x:auto; margin:6px 0 14px; padding:6px;
+            background:#fff; border:1px solid var(--line); border-radius:12px; box-shadow:var(--sh);
+            -webkit-overflow-scrolling:touch;}
+  .adm-tabs button{white-space:nowrap; border:1px solid transparent; background:transparent; color:var(--sub);
+                   border-radius:9px; padding:8px 13px; font-size:13px; font-weight:700; cursor:pointer;}
+  .adm-tabs button:active{background:#f2f5f6;}
   .adm-tabs button.on{background:var(--main); color:#fff; border-color:var(--main);}
-  table{width:100%; border-collapse:collapse; font-size:12px; background:#fff;}
-  td,th{border:1px solid var(--line); padding:5px; text-align:left; vertical-align:top;}
+
+  /* ===== 表 ===== */
+  table{width:100%; border-collapse:collapse; font-size:12px; background:#fff;
+        border:1px solid var(--line); border-radius:12px; overflow:hidden; box-shadow:var(--sh);}
+  th{background:#f5f8f9; color:var(--navy); font-weight:700;}
+  td,th{border-bottom:1px solid #eef2f4; padding:9px 8px; text-align:left; vertical-align:top;}
+  tr:last-child td{border-bottom:0;}
+
+  /* ===== 上の帯のしるしと現在地 ===== */
+  .brandico{font-size:22px; line-height:1; opacity:.95; flex:none;}
+  .here{display:none; font-weight:700; font-size:15px; padding-bottom:3px;
+        border-bottom:2px solid #fff; margin-right:6px;}
+  @media(min-width:760px){
+    .here{display:inline-block; margin-right:auto;}   /* ここから右は端に寄せる */
+    header .title{flex:0 0 auto;}
+  }
+
+  /* ===== 権限のしるし ===== */
+  .rolebadge{display:inline-block; background:var(--main-l); color:var(--main); font-size:12px;
+             font-weight:700; border-radius:6px; padding:1px 9px; margin-top:3px;}
+
+  /* ===== 管理タブのしるし（ボタンの文字は変えずにCSSで付ける） ===== */
+  .adm-tabs button::before{margin-right:5px;}
+  .adm-tabs button[data-adm="staff"]::before{content:"👥";}
+  .adm-tabs button[data-adm="user"]::before{content:"👤";}
+  .adm-tabs button[data-adm="qr"]::before{content:"🔳";}
+  .adm-tabs button[data-adm="hidden"]::before{content:"🚫";}
+  .adm-tabs button[data-adm="log"]::before{content:"📋";}
+  .adm-tabs button[data-adm="err"]::before{content:"⚠️";}
+  .adm-tabs button[data-adm="csv"]::before{content:"⬇️";}
+  .adm-tabs button[data-adm="setting"]::before{content:"⚙️";}
+
+  /* ===== パソコン幅では、カードを2列にせず読みやすい幅で中央に置く ===== */
+  @media(min-width:760px){
+    .card{padding:16px 18px;}
+    .fab{right:calc(max(18px, (100% - var(--w)) / 2)); }
+  }
 </style>
 </head>
 <body>
 
 <!-- ========== ログイン ========== -->
 <div id="loginPage" class="page">
-  <div class="inner" style="max-width:420px; margin:0 auto; padding-top:48px;">
-    <h2 id="loginTitle" style="text-align:center; margin-bottom:4px;">申し送り</h2>
-    <p style="text-align:center; color:var(--sub); font-size:14px; margin-top:0;">職員名を選び、PINを入力してください</p>
+  <div class="inner" style="max-width:520px; margin:0 auto; padding-top:40px;">
+   <div class="card" style="padding:28px 22px 26px;">
+    <h2 id="loginTitle" style="text-align:center; margin:0 0 4px; font-size:clamp(20px, 5.6vw, 27px); line-height:1.35;">申し送り</h2>
+    <p style="text-align:center; color:var(--sub); font-size:14px; margin:0 0 6px;">職員名を選び、PINを入力してください</p>
     <div id="loginMsg" class="msg"></div>
     <label>職員名</label>
     <select id="loginUser"></select>
@@ -95,19 +207,24 @@
     <label class="check">
       <input type="checkbox" id="loginMine">この端末は自分専用（次回から自動でログイン）
     </label>
-    <div class="note">事務所など複数人で使う端末では、チェックを外したままにしてください。しばらく操作がないと自動でログアウトします。</div>
-    <button class="btn" id="loginBtn" onclick="doLogin()">ログイン</button>
+    <div class="notice"><span>🛡️</span><span>事務所など複数人で使う端末では、チェックを外したままにしてください。しばらく操作がないと自動でログアウトします。</span></div>
+    <button class="btn" id="loginBtn" onclick="doLogin()">ログイン　→</button>
+    <div class="note" style="text-align:center; margin-top:14px;">🔒 プライバシーに配慮した安全な接続</div>
+   </div>
   </div>
 </div>
 
 <!-- ========== 一覧 ========== -->
 <div id="main" class="hide">
   <header>
+    <span class="brandico">⌂</span>
     <div class="title"><span id="hdTitle">申し送り</span><span class="who" id="hdWho"></span></div>
+    <span class="here">申し送り</span>
     <button onclick="openSearch()">🔍 検索</button>
     <button onclick="openMenu()">≡</button>
   </header>
   <div class="wrap">
+    <div class="pagehead"><h1>申し送り一覧</h1><p>職員間の大切な情報を時系列で確認できます</p></div>
     <div id="listMsg" class="msg"></div>
     <div id="list"></div>
     <div id="listLoading" class="loading hide">読み込み中…</div>
@@ -123,6 +240,7 @@
     <div class="title">申し送りを書く</div>
   </header>
   <div class="inner">
+    <div class="pagehead"><h1>申し送りを書く</h1><p>伝えたいことを入力してください</p></div>
     <div id="postMsg" class="msg"></div>
     <textarea id="postBody" placeholder="ここに申し送りを入力…" oninput="countBody()"></textarea>
     <div id="postCount" class="count"></div>
@@ -161,6 +279,7 @@
     <div class="title">申し送りの詳細</div>
   </header>
   <div class="inner">
+    <div class="pagehead"><h1>申し送りの詳細</h1><p>内容と、訂正・追記のやりとりを確認できます</p></div>
     <div id="detailMsg" class="msg"></div>
     <div id="detailBody"></div>
   </div>
@@ -173,6 +292,7 @@
     <div class="title">検索</div>
   </header>
   <div class="inner">
+    <div class="pagehead"><h1>検索</h1><p>条件を決めて、過去の申し送りを探せます</p></div>
     <label>記載者</label>
     <select id="sUser"><option value="">（すべて）</option></select>
     <label>利用者</label>
@@ -220,9 +340,20 @@
     <div class="title">メニュー</div>
   </header>
   <div class="inner">
-    <div class="card"><b id="menuName"></b><div style="color:var(--sub); font-size:13px;" id="menuRole"></div></div>
+    <div class="pagehead"><h1>メニュー</h1><p>アカウントとシステム設定</p></div>
+    <div class="card" style="display:flex; gap:14px; align-items:center;">
+      <span class="avatar" id="menuIcon" style="width:52px; height:52px; font-size:21px;"></span>
+      <div style="min-width:0;">
+        <b id="menuName" style="font-size:18px; color:var(--navy);"></b>
+        <div class="rolebadge" id="menuRole"></div>
+        <div class="note" style="margin-top:3px;">現在このアカウントでログインしています</div>
+      </div>
+    </div>
+    <div class="sect">システム管理</div>
     <button class="btn sub" id="adminBtn" onclick="openAdmin()">管理画面</button>
-    <button class="btn gray" onclick="doLogout()">ログアウト（職員を切り替える）</button>
+    <div class="sect">アカウント</div>
+    <button class="btn danger" onclick="doLogout()">ログアウト（職員を切り替える）</button>
+    <div class="notice"><span>🔒</span><span>共有端末では、使用後に必ずログアウトしてください</span></div>
   </div>
 </div>
 
@@ -233,6 +364,7 @@
     <div class="title">管理画面</div>
   </header>
   <div class="inner">
+    <div class="pagehead"><h1>管理画面</h1><p>職員・利用者・システム設定を管理します</p></div>
     <div class="adm-tabs">
       <button data-adm="staff" class="on" onclick="setAdm('staff')">職員</button>
       <button data-adm="user" onclick="setAdm('user')">利用者</button>
@@ -425,6 +557,7 @@ function afterLogin(r, 先読み){
   document.getElementById('hdWho').textContent = r.職員.氏名 + ' さん';
   document.getElementById('menuName').textContent = r.職員.氏名;
   document.getElementById('menuRole').textContent = r.職員.権限;
+  document.getElementById('menuIcon').textContent = String(r.職員.氏名 || '？').trim().charAt(0);
   document.getElementById('adminBtn').classList.toggle('hide', r.職員.権限 !== '管理者');
   document.getElementById('postCat').innerHTML = '<option value="">（指定しない）</option>' +
     r.設定.分類.map(function(c){ return '<option>'+esc(c)+'</option>'; }).join('');
@@ -508,12 +641,20 @@ function cardHtml(d){
   var body = String(d.本文||'');
   var short = body.length > 90 ? body.slice(0,90)+'…' : body;
   var id = safeId(d.id);
-  return '<div class="card tap" onclick="openDetail(\''+id+'\')">'
+  var 頭文字 = String(d.記載者名 || '？').trim().charAt(0);
+  var 夜勤か = (String(d.勤務帯 || '') === '夜勤');
+  return '<div class="card tap' + (d.重要度==='高' ? ' hi' : '') + '" onclick="openDetail(\''+id+'\')">'
+    + '<span class="chev">›</span>'
+    + '<div class="cardtop"><span class="avatar">'+esc(頭文字)+'</span><div class="cardmain">'
     + '<div class="meta">'
     + (d.自分既読 ? '' : '<span class="dot"></span>')
-    + '<span>'+esc(d.投稿日時)+'</span><span>'+esc(d.勤務帯)+'</span><span>'+esc(d.記載者名)+'</span></div>'
+    + '<span class="who">'+esc(d.記載者名)+'</span>'
+    + '<span class="sep">|</span><span>'+esc(d.投稿日時)+'</span>'
+    + (d.勤務帯 ? '<span class="shift'+(夜勤か?' night':'')+'">'+esc(d.勤務帯)+'</span>' : '')
+    + '</div>'
     + '<div class="body">'+esc(short)+'</div>'
     + (chips ? '<div class="chips">'+chips+'</div>' : '')
+    + '</div></div>'
     + '<div class="foot"><span>✔確認 '+(d.既読数||0)+'人</span>'
     + (d.子件数 ? '<span>💬訂正・追記 '+d.子件数+'件</span>' : '') + '</div></div>';
 }
