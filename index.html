@@ -491,10 +491,13 @@ function そっと見に行く(){
   if(!ST.token || ST.busy || document.hidden || !一覧を見ているか()) return;
   if(Date.now() - 最後に取った時刻 < 見送る間隔ミリ秒) return;
   ST.busy = true;
+  var この世代 = ST.世代 || 0;
   // ★自動:true ＝「人が触ったのではない」とサーバーに伝える。
   //   これを伝えないと、共有端末の無操作ログアウトが永久に来なくなる
   call('一覧取得', ST.token, { tab: ST.tab, 自動: true }).then(function(r){
     ST.busy = false;
+    // 見に行っているあいだに取り直しが入っていたら、この返事はもう古い（足すと二重になる）
+    if(この世代 !== (ST.世代 || 0)) return;
     最後に取った時刻 = Date.now();
     届いたぶんを足す(r);
   }).catch(function(e){
@@ -760,6 +763,8 @@ function doLogout(){
 // ===== 一覧 =====
 function setTab(t){ ST.tab = t || 'all'; reload(); }
 function reload(){
+  ST.世代 = (ST.世代 || 0) + 1;   // これより前に頼んだぶんの返事は、届いても捨てる
+  ST.busy = false;                // 前の頼みは捨てるので、待ち状態も解く
   ST.cursor = null;
   document.getElementById('list').innerHTML = '';
   document.getElementById('moreBtn').classList.add('hide');
@@ -769,27 +774,36 @@ function loadMore(){
   if(ST.busy) return;
   ST.busy = true;
   document.getElementById('listLoading').classList.remove('hide');
-  call('一覧取得', ST.token, { cursor: ST.cursor, tab: ST.tab }).then(一覧を描く).catch(function(e){
+  var この世代 = ST.世代 || 0;
+  var 頼んだ位置 = ST.cursor;
+  call('一覧取得', ST.token, { cursor: ST.cursor, tab: ST.tab }).then(function(r){
+    if(この世代 !== (ST.世代 || 0)) return;   // 取り直しが入った＝この返事はもう古い
+    一覧を描く(r, 頼んだ位置);
+  }).catch(function(e){
+    if(この世代 !== (ST.世代 || 0)) return;
     ST.busy = false;
     document.getElementById('listLoading').classList.add('hide');
     if(切れた(e)) return;
     show('listMsg', (e && e.message) || '読み込みに失敗しました');
   });
 }
-function 一覧を描く(r){
+function 一覧を描く(r, 頼んだ位置){
   ST.busy = false;
   最後に取った時刻 = Date.now();
-  if(!ST.cursor) 知らせを消す();   // 先頭から取り直した＝もう知らせるものはない
+  // ★「後ろに足す」のか「先頭から入れ替える」のかは、頼んだときの位置で決める。
+  //   いまの ST.cursor で決めると、取り直しと重なったときに判断を間違える
+  var 位置 = (頼んだ位置 === undefined) ? ST.cursor : 頼んだ位置;
+  if(!位置) 知らせを消す();   // 先頭から取り直した＝もう知らせるものはない
   document.getElementById('listLoading').classList.add('hide');
   show('listMsg','');
   var box = document.getElementById('list');
-  if(!r.items.length && !ST.cursor){
+  if(!r.items.length && !位置){
     box.innerHTML = '<div class="empty">申し送りはまだありません。<br>右下の「＋」から書けます。</div>';
   } else {
     box.insertAdjacentHTML('beforeend', r.items.map(cardHtml).join(''));
   }
   // いま画面に出ている申し送りを手元に持っておく（開くときに待たせないため）
-  ST.一覧 = ST.cursor ? (ST.一覧 || []).concat(r.items) : r.items.slice();
+  ST.一覧 = 位置 ? (ST.一覧 || []).concat(r.items) : r.items.slice();
   ST.cursor = r.next;
   document.getElementById('moreBtn').classList.toggle('hide', !r.next);
 }
@@ -958,12 +972,15 @@ function closeDetail(){
 function 裏で更新(){
   if(ST.busy) return;
   ST.busy = true;
+  ST.世代 = (ST.世代 || 0) + 1;   // これも「取り直し」なので、前に頼んだぶんは捨てる
+  var この世代 = ST.世代;
   show('listMsg','更新しています…','ok');
   call('一覧取得', ST.token, { tab: ST.tab }).then(function(r){
+    if(この世代 !== (ST.世代 || 0)) return;   // さらに新しい取り直しが入っていたら捨てる
     ST.busy = false;
     ST.cursor = null;
     document.getElementById('list').innerHTML = '';
-    一覧を描く(r);
+    一覧を描く(r, null);   // 先頭から入れ替える
     show('listMsg','');
     知らせを消す();
   }).catch(function(e){
