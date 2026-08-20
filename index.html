@@ -736,7 +736,11 @@ function doLogin(){
     ST.token = r.token;
     記憶.set('ms_token', r.token);
     document.getElementById('loginPin').value='';
-    afterLogin(r);
+    // ★2026-08-20：先読みを渡し忘れていた（Codexレビューで発覚）。
+    //   サーバーはログインの返事に「利用者・職員・一覧」を付けてくれているのに、
+    //   ここで渡していなかったので、画面がもう一度3回サーバーへ聞き直していた。
+    //   QRで開いたとき・埋め込みのときは渡していて、**PINログインの1本だけ抜けていた**
+    afterLogin(r, r.先読み);
   }).catch(function(e){
     btn.disabled = false; btn.textContent = 'ログイン';
     show('loginMsg', (e && e.message) || 'ログインできませんでした');
