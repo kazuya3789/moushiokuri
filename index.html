@@ -1305,7 +1305,7 @@ function setAdm(t){
       return '<div class="list-item"' + (出た ? ' style="opacity:.55;"' : '') + '>'
         + '<b>'+esc(u.氏名)+'</b>　'+esc(u.よみ||'')+'　'+esc(u.部屋||'')+(出た ? '　'+esc(u.在籍) : '')
         + '<div class="sp"></div>'
-        + '<button class="btn gray" style="margin:0; padding:8px; font-size:13px;" onclick="admEditUser(\''+esc(safeId(u.id))+'\')">直す</button>'
+        + '<button class="btn gray" style="margin:0; padding:8px; font-size:13px;" onclick="admEditUser(\''+esc(safeId(u.id))+'\')">編集</button>'
         + '</div>';
     };
     box.innerHTML = '<button class="btn" onclick="admAddUser()">利用者を追加する</button>'
@@ -1446,18 +1446,18 @@ function admAddUser(){
 function admEditUser(id){
   var u = (ST.利用者元 || {})[id];
   if(!u){ show('admMsg','その利用者が見つかりません'); return; }
-  窓を開く_('利用者を直す',
+  窓を開く_('利用者の編集',
     '「退去」にすると、申し送りを書く画面の利用者一覧から消えます。\nこれまでの記録は消えません。',
     [{名:'氏名', 型:'文字', 必須:true, 初期:u.氏名 || ''},
      {名:'よみがな', 型:'文字', 初期:u.よみ || '', 補足:'ひらがなで'},
      {名:'部屋番号', 型:'文字', 初期:u.部屋 || ''},
      {名:'在籍状況', 型:'選ぶ', 候補:['在籍','退去'], 初期:u.在籍 || '在籍'}],
-    '直す').then(function(答え){
+    '保存する').then(function(答え){
     if(!答え) return;
     call('管理_利用者更新', ST.token, id, 答え['氏名'], 答え['よみがな'], 答え['部屋番号'], 答え['在籍状況'])
       .then(function(res){
         setAdm('user');
-        show('admMsg', res && res.変えなかった ? '変わっていません' : '直しました', 'ok');
+        show('admMsg', res && res.変えなかった ? '変わっていません' : '保存しました', 'ok');
       })
       .catch(function(e){ if(!切れた(e)) show('admMsg', (e && e.message)); });
   });
