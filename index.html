@@ -155,6 +155,20 @@
   .loading{text-align:center; padding:20px; color:var(--sub);}
   h2{font-size:22px; margin:6px 0 0; color:var(--navy); font-weight:700;}
   .note{font-size:12px; color:var(--sub); margin-top:6px;}
+  /* ★画面の中に出す入力窓（2026-08-20）。ブラウザの小窓(prompt/confirm)は
+     LINEなどアプリの中のブラウザでは出ないことがあり、出ないと「入力が無かった」ことにされて
+     ボタンを押しても何も起きなかった。だから自前の窓に置き換えた。勝手に小窓へ戻さない */
+  .ask{position:fixed; top:0; right:0; bottom:0; left:0; z-index:60;
+       background:rgba(16,40,60,.45); display:flex; align-items:flex-end;
+       justify-content:center; padding:12px;}
+  .ask-inner{background:var(--card); border-radius:16px; width:100%; max-width:520px;
+       padding:16px; box-shadow:var(--sh2); max-height:86vh; overflow:auto;}
+  .ask-head{font-size:17px; font-weight:700; color:var(--navy); margin-bottom:6px;}
+  .ask-note{font-size:13px; color:var(--sub); margin-bottom:10px; white-space:pre-wrap;}
+  .ask-f{margin-bottom:10px;}
+  .ask-f label{display:block; font-size:13px; color:var(--sub); margin-bottom:4px;}
+  .ask-err{color:var(--warn); font-size:13px; margin:6px 0;}
+  @media(min-width:600px){ .ask{align-items:center;} }
   .count{font-size:12px; color:var(--warn); text-align:right; margin-top:4px;}
   .check{display:flex; align-items:center; gap:9px; font-size:14px; color:var(--text); margin-top:14px;
          font-weight:400;}
@@ -391,6 +405,21 @@
     </div>
     <div id="admMsg" class="msg"></div>
     <div id="admBody"></div>
+  </div>
+</div>
+
+<!-- ========== 画面の中に出す入力窓（2026-08-20） ==========
+     ブラウザの小窓（prompt／confirm）は、LINEなどアプリの中のブラウザでは出ないことがある。
+     出ないと「入力が無かった」ことになり、ボタンを押しても何も起きなかった。 -->
+<div id="askBox" class="ask hide" role="dialog" aria-modal="true" aria-labelledby="askTitle">
+  <div class="ask-inner">
+    <div class="ask-head" id="askTitle"></div>
+    <div class="ask-note hide" id="askNote"></div>
+    <div id="askBody"></div>
+    <div class="ask-err hide" id="askErr"></div>
+    <button class="btn" id="askOk">OK</button>
+    <div class="sp"></div>
+    <button class="btn gray" id="askNg">キャンセル</button>
   </div>
 </div>
 
@@ -1062,19 +1091,119 @@ function doAdd(){
       show('detailMsg', (e && e.message) || '保存できませんでした');
     });
 }
+/**
+ * 画面の中に出す入力窓（2026-08-20）。ブラウザの小窓（prompt／confirm）のかわり。
+ * ★小窓はLINEなどアプリの中のブラウザで出ないことがあり、出ないと「入力が無かった」ことに
+ *   されて、ボタンを押しても何も起きなかった。★勝手に prompt／confirm へ戻さない。
+ * 使い方： 窓を開く_('題', '説明', [{名:'氏名', 型:'文字', 必須:true}], 'OKの文字')
+ *   → 押されるまで待って、{氏名:'…'} を返す。キャンセルなら null。
+ *   型＝ 文字／長文／数字／選ぶ（候補:[…]）
+ */
+var 窓の答え_ = null;   // いま開いている窓の返事役
+var 窓の欄_ = [];
+function 窓を開く_(題, 説明, 欄たち, OKの文字, ひとつだけ){
+  return new Promise(function(答える){
+    // すでに開いていたら、前のはキャンセル扱いにする（二重に開かない）
+    if(窓の答え_){ var 前 = 窓の答え_; 窓の答え_ = null; 前(null); }
+    窓の欄_ = 欄たち || [];
+    document.getElementById('askTitle').textContent = 題 || '';
+    var 注 = document.getElementById('askNote');
+    注.textContent = 説明 || '';
+    注.className = 説明 ? 'ask-note' : 'ask-note hide';
+    document.getElementById('askErr').className = 'ask-err hide';
+    document.getElementById('askOk').textContent = OKの文字 || 'OK';
+    var ng = document.getElementById('askNg');
+    ng.className = ひとつだけ ? 'btn gray hide' : 'btn gray';
+    var h = '';
+    for(var i = 0; i < 窓の欄_.length; i++){
+      var f = 窓の欄_[i], id = 'askF' + i;
+      h += '<div class="ask-f"><label for="' + id + '">' + esc(f.名)
+         + (f.必須 ? '（必ず入れてください）' : '') + '</label>';
+      if(f.型 === '選ぶ'){
+        h += '<select id="' + id + '">';
+        for(var j = 0; j < f.候補.length; j++){
+          h += '<option value="' + esc(f.候補[j]) + '"'
+             + (String(f.初期 == null ? '' : f.初期) === f.候補[j] ? ' selected' : '')
+             + '>' + esc(f.候補[j]) + '</option>';
+        }
+        h += '</select>';
+      } else if(f.型 === '長文'){
+        h += '<textarea id="' + id + '" style="min-height:120px;">' + esc(f.初期 || '') + '</textarea>';
+      } else if(f.型 === '数字'){
+        // ★type=number にすると端末によって上下の矢印や記号が出るので tel＋数字キーボード
+        h += '<input id="' + id + '" type="tel" inputmode="numeric" pattern="[0-9]*" value="'
+           + esc(f.初期 || '') + '">';
+      } else {
+        h += '<input id="' + id + '" type="text" value="' + esc(f.初期 || '') + '">';
+      }
+      if(f.補足) h += '<div class="note">' + esc(f.補足) + '</div>';
+      h += '</div>';
+    }
+    document.getElementById('askBody').innerHTML = h;
+    document.getElementById('askBox').classList.remove('hide');
+    窓の答え_ = 答える;
+    var 最初 = document.getElementById('askF0');
+    if(最初) setTimeout(function(){ try { 最初.focus(); } catch(e){} }, 30);
+  });
+}
+function 窓のエラー_(文){
+  var e = document.getElementById('askErr');
+  e.textContent = 文; e.className = 'ask-err';
+}
+function 窓を閉じる_(答え){
+  document.getElementById('askBox').classList.add('hide');
+  var 返す = 窓の答え_; 窓の答え_ = null;
+  if(返す) 返す(答え);
+}
+function 窓のOK_(){
+  var 出 = {};
+  for(var i = 0; i < 窓の欄_.length; i++){
+    var f = 窓の欄_[i], el = document.getElementById('askF' + i);
+    var v = el ? String(el.value == null ? '' : el.value) : '';
+    if(f.型 !== '長文') v = v.replace(/^\s+|\s+$/g, '');
+    else v = v.replace(/^\s+|\s+$/g, '');
+    if(f.必須 && !v){ 窓のエラー_(f.名 + 'を入れてください'); try { el.focus(); } catch(e){} return; }
+    出[f.名] = v;
+  }
+  窓を閉じる_(出);
+}
+/** はい／いいえ（confirmのかわり）。押されるまで待つ */
+function たずねる_(題, 文, OKの文字){
+  return 窓を開く_(題, 文, [], OKの文字 || 'はい').then(function(答え){ return !!答え; });
+}
+/** お知らせ（alertのかわり）。閉じるボタンだけ出す */
+function しらせる_(題, 文){
+  return 窓を開く_(題, 文, [], '閉じる', true);
+}
+// ボタンと、背景タップ・Escで閉じる仕掛けを付ける（この script は入れ物より後ろにある）
+(function(){
+  var 箱 = document.getElementById('askBox');
+  if(!箱) return;
+  document.getElementById('askOk').onclick = function(){ 窓のOK_(); };
+  document.getElementById('askNg').onclick = function(){ 窓を閉じる_(null); };
+  箱.addEventListener('click', function(e){ if(e.target === 箱) 窓を閉じる_(null); });
+  document.addEventListener('keydown', function(e){
+    if((e.key === 'Escape' || e.keyCode === 27) && 窓の答え_) 窓を閉じる_(null);
+  });
+})();
+
 function openSelfEdit(){
-  var t = prompt('修正後の内容を入力してください（変更前の文は履歴として保存されます）', '');
-  if(t===null || !t.trim()) return;
-  call('自己修正', ST.token, ST.detailId, t)
+  窓を開く_('申し送りを訂正する', '変更前の文は履歴として残ります。',
+    [{名:'修正後の内容', 型:'長文', 必須:true}], '訂正する').then(function(答え){
+  if(!答え) return;
+  call('自己修正', ST.token, ST.detailId, 答え['修正後の内容'])
     .then(function(){ openDetail(ST.detailId); })
     .catch(function(e){ if(!切れた(e)) show('detailMsg', (e && e.message)); });
+  });
 }
 function doHide(){
-  var r = prompt('非表示にする理由を入力してください（記録は消えず、復元できます）');
-  if(r===null || !r.trim()) return;
-  call('管理_非表示にする', ST.token, ST.detailId, r)
-    .then(function(){ closeDetail(); })
-    .catch(function(e){ if(!切れた(e)) show('detailMsg', (e && e.message)); });
+  窓を開く_('この申し送りを非表示にする', '記録は消えません。あとから「非表示一覧」から戻せます。',
+    [{名:'非表示にする理由', 型:'文字', 必須:true}], '非表示にする').then(function(答え){
+    if(!答え) return;
+    call('管理_非表示にする', ST.token, ST.detailId, 答え['非表示にする理由'])
+      .then(function(){ closeDetail(); })
+      .catch(function(e){ if(!切れた(e)) show('detailMsg', (e && e.message)); });
+  });
 }
 
 // ===== 検索 =====
@@ -1284,23 +1413,30 @@ function setAdm(t){
     + '<div id="csvOut" style="margin-top:12px;"></div>';
 }
 function admAddStaff(){
-  var n = prompt('職員の氏名'); if(!n) return;
-  var y = prompt('よみがな（ひらがな）','') || '';
-  var k = confirm('この職員を「管理者」にしますか？\nOK＝管理者／キャンセル＝一般職員') ? '管理者' : '一般';
-  var p = prompt(k === '管理者'
-    ? '初期PIN（6〜8桁の数字を推奨。管理者は削除やCSV出力ができるため長めに）'
-    : '初期PIN（4〜8桁の数字）'); if(!p) return;
-  call('管理_職員追加', ST.token, n, y, k, p)
-    .then(function(){ setAdm('staff'); show('admMsg','追加しました','ok'); })
-    .catch(function(e){ if(!切れた(e)) show('admMsg', (e && e.message)); });
+  窓を開く_('職員を追加する', '',
+    [{名:'氏名', 型:'文字', 必須:true},
+     {名:'よみがな', 型:'文字', 補足:'ひらがなで（あとから検索するときに使います）'},
+     {名:'権限', 型:'選ぶ', 候補:['一般','管理者'], 初期:'一般',
+      補足:'管理者は、職員や利用者の追加・CSV出力・非表示ができます'},
+     {名:'初期PIN', 型:'数字', 必須:true, 補足:'4〜8桁の数字（管理者は6桁以上をおすすめします）'}],
+    '追加する').then(function(答え){
+    if(!答え) return;
+    call('管理_職員追加', ST.token, 答え['氏名'], 答え['よみがな'], 答え['権限'], 答え['初期PIN'])
+      .then(function(){ setAdm('staff'); show('admMsg','追加しました','ok'); })
+      .catch(function(e){ if(!切れた(e)) show('admMsg', (e && e.message)); });
+  });
 }
 function admAddUser(){
-  var n = prompt('利用者の氏名'); if(!n) return;
-  var y = prompt('よみがな（ひらがな）','') || '';
-  var r = prompt('部屋番号','') || '';
-  call('管理_利用者追加', ST.token, n, y, r)
-    .then(function(){ setAdm('user'); show('admMsg','追加しました','ok'); })
-    .catch(function(e){ if(!切れた(e)) show('admMsg', (e && e.message)); });
+  窓を開く_('利用者を追加する', '',
+    [{名:'氏名', 型:'文字', 必須:true},
+     {名:'よみがな', 型:'文字', 補足:'ひらがなで'},
+     {名:'部屋番号', 型:'文字'}],
+    '追加する').then(function(答え){
+    if(!答え) return;
+    call('管理_利用者追加', ST.token, 答え['氏名'], 答え['よみがな'], 答え['部屋番号'])
+      .then(function(){ setAdm('user'); show('admMsg','追加しました','ok'); })
+      .catch(function(e){ if(!切れた(e)) show('admMsg', (e && e.message)); });
+  });
 }
 /**
  * 利用者を直す（氏名・よみ・部屋・在籍）。
@@ -1310,17 +1446,21 @@ function admAddUser(){
 function admEditUser(id){
   var u = (ST.利用者元 || {})[id];
   if(!u){ show('admMsg','その利用者が見つかりません'); return; }
-  var n = prompt('氏名', u.氏名 || ''); if(n === null) return;
-  var y = prompt('よみがな（ひらがな）', u.よみ || ''); if(y === null) return;
-  var r = prompt('部屋番号', u.部屋 || ''); if(r === null) return;
-  var z = prompt('在籍状況（在籍／退去）\n※退去にすると、投稿画面の利用者一覧から消えます。\n　これまでの記録は消えません。', u.在籍 || '在籍');
-  if(z === null) return;
-  call('管理_利用者更新', ST.token, id, n, y, r, String(z).trim())
-    .then(function(res){
-      setAdm('user');
-      show('admMsg', res && res.変えなかった ? '変わっていません' : '直しました', 'ok');
-    })
-    .catch(function(e){ if(!切れた(e)) show('admMsg', (e && e.message)); });
+  窓を開く_('利用者を直す',
+    '「退去」にすると、申し送りを書く画面の利用者一覧から消えます。\nこれまでの記録は消えません。',
+    [{名:'氏名', 型:'文字', 必須:true, 初期:u.氏名 || ''},
+     {名:'よみがな', 型:'文字', 初期:u.よみ || '', 補足:'ひらがなで'},
+     {名:'部屋番号', 型:'文字', 初期:u.部屋 || ''},
+     {名:'在籍状況', 型:'選ぶ', 候補:['在籍','退去'], 初期:u.在籍 || '在籍'}],
+    '直す').then(function(答え){
+    if(!答え) return;
+    call('管理_利用者更新', ST.token, id, 答え['氏名'], 答え['よみがな'], 答え['部屋番号'], 答え['在籍状況'])
+      .then(function(res){
+        setAdm('user');
+        show('admMsg', res && res.変えなかった ? '変わっていません' : '直しました', 'ok');
+      })
+      .catch(function(e){ if(!切れた(e)) show('admMsg', (e && e.message)); });
+  });
 }
 /**
  * 退職・退去した人を「▶ 退職・異動 3名（押すと開きます）」の1行にたたむ（2026-08-20）。
@@ -1342,16 +1482,22 @@ function たたみを開く(見出し){
     + (開く ? '（押すと閉じます）' : '（押すと開きます）');
 }
 function admPin(id){
-  var p = prompt('新しいPIN（4〜8桁の数字。管理者は6桁以上を推奨）'); if(!p) return;
-  call('管理_PIN再発行', ST.token, id, p)
+  窓を開く_('PINを再発行する', 'いまのPINは使えなくなります。新しいPINを本人にお伝えください。',
+    [{名:'新しいPIN', 型:'数字', 必須:true, 補足:'4〜8桁の数字（管理者は6桁以上をおすすめします）'}],
+    '再発行する').then(function(答え){
+  if(!答え) return;
+  call('管理_PIN再発行', ST.token, id, 答え['新しいPIN'])
     .then(function(){ show('admMsg','PINを再発行しました。旧ログインは無効になりました','ok'); })
     .catch(function(e){ if(!切れた(e)) show('admMsg', (e && e.message)); });
+  });
 }
 function admStaff(id, k, v){
-  if(!confirm('この職員を「'+v+'」に変更します。よろしいですか？')) return;
-  call('管理_職員更新', ST.token, id, k, v)
-    .then(function(){ setAdm('staff'); show('admMsg','変更しました','ok'); })
-    .catch(function(e){ if(!切れた(e)) show('admMsg', (e && e.message)); });
+  たずねる_('この職員を「' + v + '」にします', 'よろしいですか？', 'はい').then(function(はい){
+    if(!はい) return;
+    call('管理_職員更新', ST.token, id, k, v)
+      .then(function(){ setAdm('staff'); show('admMsg','変更しました','ok'); })
+      .catch(function(e){ if(!切れた(e)) show('admMsg', (e && e.message)); });
+  });
 }
 function admUnlock(id){
   call('管理_ロック解除', ST.token, id)
@@ -1359,10 +1505,12 @@ function admUnlock(id){
     .catch(function(e){ if(!切れた(e)) show('admMsg', (e && e.message)); });
 }
 function admRestore(id){
-  if(!confirm('この記録を一覧に戻します。よろしいですか？')) return;
-  call('管理_復元', ST.token, id)
-    .then(function(){ setAdm('hidden'); show('admMsg','復元しました','ok'); })
-    .catch(function(e){ if(!切れた(e)) show('admMsg', (e && e.message)); });
+  たずねる_('この記録を一覧に戻します', 'よろしいですか？', '戻す').then(function(はい){
+    if(!はい) return;
+    call('管理_復元', ST.token, id)
+      .then(function(){ setAdm('hidden'); show('admMsg','復元しました','ok'); })
+      .catch(function(e){ if(!切れた(e)) show('admMsg', (e && e.message)); });
+  });
 }
 /** チェックの付いた職員を集める（空なら全員あつかい） */
 function 選んだ職員_(全員){
@@ -1382,17 +1530,21 @@ function admQrPrint(全員){
   show('admMsg','');
   document.getElementById('qrOut').textContent = 'カードを組み立てています…';
   call('管理_QRカード印刷用', ST.token, ids).then(function(r){
-    var w = window.open('', '_blank');
-    if(!w){
-      document.getElementById('qrOut').textContent =
-        '新しい窓を開けませんでした。ブラウザの「ポップアップを許可」をご確認いただくか、下の「ドライブにPDFで残す」をお使いください。';
-      return;
-    }
-    w.document.open(); w.document.write(r.html); w.document.close();
-    document.getElementById('qrOut').innerHTML =
-      esc(r.件数) + '名ぶんのカードを新しい窓に出しました。'
-      + '<div class="note">印刷画面が出ない場合は、その窓で「Ctrlキーを押しながら P」を押してください。</div>';
-    setTimeout(function(){ try { w.focus(); w.print(); } catch(e){} }, 800);
+    // ★新しい窓は開かない。スマホでは止められることが多く、印刷が無い端末もある
+    var 枠 = document.getElementById('qrOut');
+    枠.innerHTML = '<div class="note">' + esc(r.件数) + '名ぶんのカードです。'
+      + 'パソコンなら下の「印刷する」から紙に出せます。'
+      + 'スマホのときは「ドライブにPDFで残す」のほうが確実です。</div>'
+      + '<div class="sp"></div>'
+      + '<button class="btn" id="qrPrintBtn">印刷する</button>'
+      + '<div class="sp"></div>'
+      + '<iframe id="qrFrame" title="QRカード" style="width:100%; height:60vh; border:1px solid var(--line); border-radius:12px; background:#fff;"></iframe>';
+    var 中 = document.getElementById('qrFrame').contentWindow;
+    中.document.open(); 中.document.write(r.html); 中.document.close();
+    document.getElementById('qrPrintBtn').onclick = function(){
+      try { 中.focus(); 中.print(); }
+      catch(e){ show('admMsg','この端末では印刷できません。「ドライブにPDFで残す」をお使いください'); }
+    };
   }).catch(function(e){ if(!切れた(e)) document.getElementById('qrOut').textContent = (e && e.message); });
 }
 
@@ -1622,12 +1774,15 @@ function 添付を開く(id, 種類){
 }
 
 function 添付を取り出す(id){
-  if(!confirm('事務所のPCから取り出します。\n数分で見られるようになります。よろしいですか？')) return;
-  call('管理_添付取り出し', ST.token, id).then(function(r){
-    var 枠 = document.getElementById('実物_'+id);
-    枠.textContent = r.依頼した ? '取り出しています。数分後にもう一度開いてください。'
-                  : (r.待ち ? 'すでに取り出し中です。もう少しお待ちください。' : 'もう見られます。開き直してください。');
-  }).catch(function(e){ if(!切れた(e)) alert((e && e.message)); });
+  たずねる_('事務所のPCから取り出します', '数分で見られるようになります。よろしいですか？', '取り出す')
+    .then(function(はい){
+    if(!はい) return;
+    call('管理_添付取り出し', ST.token, id).then(function(r){
+      var 枠 = document.getElementById('実物_'+id);
+      枠.textContent = r.依頼した ? '取り出しています。数分後にもう一度開いてください。'
+                    : (r.待ち ? 'すでに取り出し中です。もう少しお待ちください。' : 'もう見られます。開き直してください。');
+    }).catch(function(e){ if(!切れた(e)) しらせる_('取り出せませんでした', String(e && e.message)); });
+  });
 }
 
 function admQrPdf(全員){
@@ -1646,10 +1801,13 @@ function admQrPdf(全員){
   }).catch(function(e){ if(!切れた(e)) document.getElementById('qrOut').textContent = (e && e.message); });
 }
 function admQrReset(id){
-  if(!confirm('このかたのQRを作り直します。\n今までお渡ししたカードは、その場で使えなくなります。よろしいですか？')) return;
+  たずねる_('このかたのQRを作り直します',
+    '今までお渡ししたカードは、その場で使えなくなります。よろしいですか？', '作り直す').then(function(はい){
+  if(!はい) return;
   call('管理_QR作り直す', ST.token, id)
     .then(function(){ setAdm('staff'); show('admMsg','QRを作り直しました。「QRカード」タブから新しいカードを出してお渡しください','ok'); })
     .catch(function(e){ if(!切れた(e)) show('admMsg', (e && e.message)); });
+  });
 }
 /** 作ったCSVを覚えておく（保存ボタンを押したときに使う） */
 var 作ったCSV = null;
