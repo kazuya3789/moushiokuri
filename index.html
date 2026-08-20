@@ -1260,16 +1260,80 @@ function doSearch(){
 // ===== メニュー・管理 =====
 function openMenu(){ document.getElementById('menuPage').classList.remove('hide'); }
 function openAdmin(){ document.getElementById('adminPage').classList.remove('hide'); setAdm('staff'); }
+// ===== 管理画面のタブを「押した瞬間に出す」ための控え（2026-08-20）=====
+//  ・控えはメモリだけ（画面を閉じたら消える）。共有端末に本文を残さないため
+//  ・押した瞬間に前回の中身を出し、そのうしろで必ず取り直して入れ替える
+//  ・古いものを見せている間は「◯時◯分 時点（最新を確認しています…）」と必ず出す
+var 管理の控え_ = {};      // タブ名 → { データ, 時刻 }
+var 管理の世代_ = 0;       // 素早くタブを移ったとき、古い返事で上書きしないための番号
+var 管理のいまのタブ_ = null;
+/** 何かを変えたら、控えは全部捨てる（古い内容が残らないように）*/
+function 管理の控えを捨てる_(){ 管理の控え_ = {}; }
+function 時分_(d){
+  var h = d.getHours(), m = d.getMinutes();
+  return h + '時' + (m < 10 ? '0' + m : m) + '分';
+}
+function 管理の時点を出す_(文){
+  var box = document.getElementById('admBody');
+  if(!box) return;
+  var 印 = document.createElement('div');
+  印.className = 'note';
+  印.style.marginTop = '0';
+  印.textContent = 文;
+  // ★「職員を追加する」「利用者を追加する」は、いちばん上のままにする。
+  //   ここを box.firstChild に入れたら、その日に直したばかりの並びを壊し、
+  //   確認_退職者をたたむか.js が赤くなって教えてくれた（2026-08-20）
+  var 先頭 = box.firstElementChild;
+  if(先頭 && 先頭.tagName === 'BUTTON') box.insertBefore(印, 先頭.nextSibling);
+  else box.insertBefore(印, 先頭);
+}
+/**
+ * 管理タブ用の呼びかけ。`call(...)` の代わりに使う。
+ *  ・控えがあれば、まずそれで描く（待ち時間ゼロ）
+ *  ・そのあと必ずサーバーへ行き、届いたら描き直す
+ *  ・別のタブに移っていたら描かない（世代番号で見分ける）
+ */
+function 管理で呼ぶ_(タブ, 関数名){
+  var 引数 = Array.prototype.slice.call(arguments, 2);
+  var 世代 = ++管理の世代_;
+  var 控え = 管理の控え_[タブ];
+  var 描く役 = null, 失敗役 = null;
+  // 控えがあるうちに描く（.then で描く役を受け取ったすぐ後に動かす）
+  setTimeout(function(){
+    if(!描く役 || 管理のいまのタブ_ !== タブ || 世代 !== 管理の世代_) return;
+    if(控え){
+      描く役(控え.データ);
+      管理の時点を出す_(時分_(控え.時刻) + ' 時点（最新を確認しています…）');
+    }
+  }, 0);
+  call.apply(null, [関数名].concat(引数)).then(function(データ){
+    管理の控え_[タブ] = { データ: データ, 時刻: new Date() };
+    if(!描く役 || 管理のいまのタブ_ !== タブ || 世代 !== 管理の世代_) return;   // 別のタブに移った
+    描く役(データ);
+    管理の時点を出す_(時分_(new Date()) + ' 現在');
+  }).catch(function(e){
+    if(管理のいまのタブ_ !== タブ || 世代 !== 管理の世代_) return;
+    if(失敗役) 失敗役(e);
+  });
+  var 受け = {
+    then: function(f){ 描く役 = f; return 受け; },
+    catch: function(f){ 失敗役 = f; return 受け; }
+  };
+  return 受け;
+}
+
 function setAdm(t){
   Array.prototype.forEach.call(document.querySelectorAll('.adm-tabs button'), function(b){
     b.classList.toggle('on', b.dataset.adm === t);
   });
+  管理のいまのタブ_ = t;
   var box = document.getElementById('admBody');
-  box.innerHTML = '<div class="loading">読み込み中…</div>';
+  // ★控えがあるときは「読み込み中…」を出さない（一瞬の空白を作らないため）
+  if(!管理の控え_[t]) box.innerHTML = '<div class="loading">読み込み中…</div>';
   show('admMsg','');
   var 失敗 = function(e){ if(!切れた(e)){ box.innerHTML=''; show('admMsg', (e && e.message)); } };
 
-  if(t==='staff') call('管理_職員一覧', ST.token).then(function(rows){
+  if(t==='staff') 管理で呼ぶ_(t, '管理_職員一覧', ST.token).then(function(rows){
     // 在職の人だけを普通に並べ、退職・異動はたたんで隠す（2026-08-20）
     var 在職 = [], 退職 = [];
     for(var i=0; i<rows.length; i++){ (rows[i].在職==='在職' ? 在職 : 退職).push(rows[i]); }
@@ -1293,7 +1357,7 @@ function setAdm(t){
       + たたんで見せる('staffOld', '退職・異動 '+退職.length+'名', 退職.map(一人).join(''), 退職.length);
   }).catch(失敗);
 
-  if(t==='user') call('利用者一覧', ST.token).then(function(rows){
+  if(t==='user') 管理で呼ぶ_(t, '利用者一覧', ST.token).then(function(rows){
     // 在籍の人だけを部屋の順に並べ、退去した人はたたんで隠す（2026-08-20）
     var 並び = rows.slice().sort(function(a,b){
       return String(a.部屋||'').localeCompare(String(b.部屋||''));
@@ -1318,7 +1382,7 @@ function setAdm(t){
       + たたんで見せる('userOld', '退去 '+退去.length+'名', 退去.map(一人).join(''), 退去.length);
   }).catch(失敗);
 
-  if(t==='hidden') call('管理_非表示一覧', ST.token).then(function(rows){
+  if(t==='hidden') 管理で呼ぶ_(t, '管理_非表示一覧', ST.token).then(function(rows){
     box.innerHTML = rows.length ? rows.map(function(d){
       return '<div class="list-item"><div style="color:var(--sub); font-size:12px;">'+esc(d.投稿日時full)+'　'+esc(d.記載者名)+'</div>'
         + '<div class="body">'+esc(d.本文)+'</div>'
@@ -1327,21 +1391,21 @@ function setAdm(t){
     }).join('') : '<div class="empty">非表示にした記録はありません。</div>';
   }).catch(失敗);
 
-  if(t==='log') call('管理_監査ログ', ST.token, 200).then(function(rows){
+  if(t==='log') 管理で呼ぶ_(t, '管理_監査ログ', ST.token, 200).then(function(rows){
     box.innerHTML = '<table><tr><th>日時</th><th>職員</th><th>操作</th><th>対象</th><th>備考</th></tr>'
       + rows.map(function(r){
         return '<tr><td>'+esc(r.日時)+'</td><td>'+esc(r.職員名)+'</td><td>'+esc(r.操作)+'</td><td>'+esc(r.対象)+'</td><td>'+esc(r.備考)+'</td></tr>';
       }).join('') + '</table>';
   }).catch(失敗);
 
-  if(t==='err') call('管理_エラー一覧', ST.token, 50).then(function(rows){
+  if(t==='err') 管理で呼ぶ_(t, '管理_エラー一覧', ST.token, 50).then(function(rows){
     box.innerHTML = rows.length ? ('<table><tr><th>日時</th><th>種類</th><th>内容</th></tr>'
       + rows.map(function(r){
         return '<tr><td>'+esc(r.日時)+'</td><td>'+esc(r.種類)+'</td><td>'+esc(r.内容)+'</td></tr>';
       }).join('') + '</table>') : '<div class="empty">エラーは記録されていません。</div>';
   }).catch(失敗);
 
-  if(t==='qr') call('管理_職員一覧', ST.token).then(function(rows){
+  if(t==='qr') 管理で呼ぶ_(t, '管理_職員一覧', ST.token).then(function(rows){
     var 在職 = rows.filter(function(s){ return s.在職==='在職'; });
     box.innerHTML = '<div class="note">QRカードは、読み取るだけで申し送りに入れる「鍵」です。'
         + '本人だけが持つようにしてください。なくしたときは「職員」タブでそのかたのQRを作り直すと、'
@@ -1426,7 +1490,7 @@ function admAddStaff(){
     '追加する').then(function(答え){
     if(!答え) return;
     call('管理_職員追加', ST.token, 答え['氏名'], 答え['よみがな'], 答え['権限'], 答え['初期PIN'])
-      .then(function(){ setAdm('staff'); show('admMsg','追加しました','ok'); })
+      .then(function(){ 管理の控えを捨てる_(); setAdm('staff'); show('admMsg','追加しました','ok'); })
       .catch(function(e){ if(!切れた(e)) show('admMsg', (e && e.message)); });
   });
 }
@@ -1438,7 +1502,7 @@ function admAddUser(){
     '追加する').then(function(答え){
     if(!答え) return;
     call('管理_利用者追加', ST.token, 答え['氏名'], 答え['よみがな'], 答え['部屋番号'])
-      .then(function(){ setAdm('user'); show('admMsg','追加しました','ok'); })
+      .then(function(){ 管理の控えを捨てる_(); setAdm('user'); show('admMsg','追加しました','ok'); })
       .catch(function(e){ if(!切れた(e)) show('admMsg', (e && e.message)); });
   });
 }
@@ -1460,6 +1524,7 @@ function admEditUser(id){
     if(!答え) return;
     call('管理_利用者更新', ST.token, id, 答え['氏名'], 答え['よみがな'], 答え['部屋番号'], 答え['在籍状況'])
       .then(function(res){
+        管理の控えを捨てる_();
         setAdm('user');
         show('admMsg', res && res.変えなかった ? '変わっていません' : '保存しました', 'ok');
       })
@@ -1491,7 +1556,7 @@ function admPin(id){
     '再発行する').then(function(答え){
   if(!答え) return;
   call('管理_PIN再発行', ST.token, id, 答え['新しいPIN'])
-    .then(function(){ show('admMsg','PINを再発行しました。旧ログインは無効になりました','ok'); })
+    .then(function(){ 管理の控えを捨てる_(); show('admMsg','PINを再発行しました。旧ログインは無効になりました','ok'); })
     .catch(function(e){ if(!切れた(e)) show('admMsg', (e && e.message)); });
   });
 }
@@ -1499,7 +1564,7 @@ function admStaff(id, k, v){
   たずねる_('この職員を「' + v + '」にします', 'よろしいですか？', 'はい').then(function(はい){
     if(!はい) return;
     call('管理_職員更新', ST.token, id, k, v)
-      .then(function(){ setAdm('staff'); show('admMsg','変更しました','ok'); })
+      .then(function(){ 管理の控えを捨てる_(); setAdm('staff'); show('admMsg','変更しました','ok'); })
       .catch(function(e){ if(!切れた(e)) show('admMsg', (e && e.message)); });
   });
 }
@@ -1512,7 +1577,7 @@ function admRestore(id){
   たずねる_('この記録を一覧に戻します', 'よろしいですか？', '戻す').then(function(はい){
     if(!はい) return;
     call('管理_復元', ST.token, id)
-      .then(function(){ setAdm('hidden'); show('admMsg','復元しました','ok'); })
+      .then(function(){ 管理の控えを捨てる_(); setAdm('hidden'); show('admMsg','復元しました','ok'); })
       .catch(function(e){ if(!切れた(e)) show('admMsg', (e && e.message)); });
   });
 }
@@ -1809,7 +1874,7 @@ function admQrReset(id){
     '今までお渡ししたカードは、その場で使えなくなります。よろしいですか？', '作り直す').then(function(はい){
   if(!はい) return;
   call('管理_QR作り直す', ST.token, id)
-    .then(function(){ setAdm('staff'); show('admMsg','QRを作り直しました。「QRカード」タブから新しいカードを出してお渡しください','ok'); })
+    .then(function(){ 管理の控えを捨てる_(); setAdm('staff'); show('admMsg','QRを作り直しました。「QRカード」タブから新しいカードを出してお渡しください','ok'); })
     .catch(function(e){ if(!切れた(e)) show('admMsg', (e && e.message)); });
   });
 }
