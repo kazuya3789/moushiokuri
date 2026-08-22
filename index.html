@@ -424,6 +424,7 @@
 </div>
 
 <script>
+var 画面の版 = '1611b6122884';
 // 申し送りのデータを預かっている場所（Googleのスプレッドシート側）
 var データの置き場 = 'https://moushiokuri-api.kazuya3789.workers.dev/';
 // QRカードから開いたときは、URLの ?k= に合言葉が入っている
@@ -613,7 +614,39 @@ function 新着を見せる(){
  * 画面に戻ってきたとき（他のアプリから戻った・画面をつけた・別の画面から一覧に戻った）。
  * このときは人が「いま見に来たところ」なので、帯を出さずそのまま最新に入れ替えてよい。
  */
+/**
+ * いま開いている画面が最新かどうかを、そっと確かめる。
+ * ★勝手に読み込み直さない（書きかけが消えるため）。帯を出して、押してもらう。
+ * ★10分に1回まで。つながらなければ黙って次の回に回す。
+ */
+var 版をみた時刻 = 0;
+function 新しい版が出ていないか(){
+  if(Date.now() - 版をみた時刻 < 10 * 60 * 1000) return;
+  版をみた時刻 = Date.now();
+  fetch(location.pathname + '?v=' + Date.now(), { cache: 'no-store' })
+    .then(function(r){ return r.ok ? r.text() : ''; })
+    .then(function(t){
+      var m = String(t).match(/var 画面の版 = '([^']*)'/);
+      if(m && m[1] && m[1] !== 画面の版) 新しい版の知らせ();
+    }).catch(function(){});
+}
+function 新しい版の知らせ(){
+  if(document.getElementById('newVer')) return;
+  var d = document.createElement('div');
+  d.id = 'newVer';
+  d.style.cssText = 'position:fixed;left:12px;right:12px;bottom:12px;z-index:60;'
+    + 'background:#14395e;color:#fff;padding:12px 14px;border-radius:10px;'
+    + 'font-size:14px;line-height:1.6;box-shadow:0 4px 16px rgba(0,0,0,.3);'
+    + 'display:flex;gap:10px;align-items:center;justify-content:space-between;';
+  d.innerHTML = '<span>新しい版が出ています。</span>'
+    + '<button type="button" id="newVerBtn" style="flex:0 0 auto;background:#fff;'
+    + 'color:#14395e;border:0;border-radius:8px;padding:8px 14px;font-weight:700;'
+    + 'font-size:14px;">読み込み直す</button>';
+  document.body.appendChild(d);
+  document.getElementById('newVerBtn').onclick = function(){ location.reload(); };
+}
 function 戻ってきた(){
+  新しい版が出ていないか();
   if(!ST.token || !一覧を見ているか()) return;
   if(Date.now() - 最後に取った時刻 < 見送る間隔ミリ秒) return;
   裏で更新();
@@ -761,6 +794,7 @@ function afterLogin(r, 先読み){
     r.設定.分類.map(function(c){ return '<option>'+esc(c)+'</option>'; }).join('');
   document.getElementById('sCat').innerHTML = '<option value="">（すべて）</option>' +
     r.設定.分類.map(function(c){ return '<option>'+esc(c)+'</option>'; }).join('');
+  window.利用者を並べる = 利用者を並べる;   // ★投稿画面の取り直しから呼ぶ
   function 利用者を並べる(us){
     ST.users = us || [];
     document.getElementById('postUser').innerHTML = '<option value="">（指定しない）</option>' +
@@ -887,6 +921,25 @@ function openPost(){
   受付ID = uuid();
   document.getElementById('postPage').classList.remove('hide');
   setTimeout(function(){ document.getElementById('postBody').focus(); }, 100);
+  名簿をそっと取り直す();
+}
+
+/**
+ * 利用者の名簿を、画面を出したあとに取り直す。
+ * ★選んでいる途中で入れ替わらないよう、選択は覚えてから戻す。
+ *   戻せない（＝退去して一覧から消えた）ときは「指定しない」に戻す。
+ */
+function 名簿をそっと取り直す(){
+  if(!ST.token) return;
+  var 選 = document.getElementById('postUser');
+  var 選んでいた = 選 ? 選.value : '';
+  call('利用者一覧', ST.token).then(function(us){
+    利用者を並べる(us);
+    if(選んでいた && 選){
+      選.value = 選んでいた;
+      if(選.value !== 選んでいた) 選.value = '';   // もう居ない人だった
+    }
+  }).catch(function(){});   // つながらなくても、いまの名簿のまま書ける
 }
 function closePage(id){ document.getElementById(id).classList.add('hide'); }
 /**
