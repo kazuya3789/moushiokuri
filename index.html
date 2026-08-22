@@ -424,7 +424,7 @@
 </div>
 
 <script>
-var 画面の版 = '1611b6122884';
+var 画面の版 = 'f307a4bbe805';
 // 申し送りのデータを預かっている場所（Googleのスプレッドシート側）
 var データの置き場 = 'https://moushiokuri-api.kazuya3789.workers.dev/';
 // QRカードから開いたときは、URLの ?k= に合言葉が入っている
@@ -1389,7 +1389,11 @@ function setAdm(t){
   if(t==='staff') 管理で呼ぶ_(t, '管理_職員一覧', ST.token).then(function(rows){
     // 在職の人だけを普通に並べ、退職・異動はたたんで隠す（2026-08-20）
     var 在職 = [], 退職 = [];
-    for(var i=0; i<rows.length; i++){ (rows[i].在職==='在職' ? 在職 : 退職).push(rows[i]); }
+    ST.職員元 = {};
+    for(var i=0; i<rows.length; i++){
+      ST.職員元[rows[i].id] = rows[i];
+      (rows[i].在職==='在職' ? 在職 : 退職).push(rows[i]);
+    }
     var 一人 = function(s){
       var id = esc(s.id);
       var 現役 = (s.在職==='在職');
@@ -1397,9 +1401,8 @@ function setAdm(t){
         + '<b>'+esc(s.氏名)+'</b>（'+esc(s.権限)+(現役 ? '' : '／'+esc(s.在職))+'）'
         + (s.ロック中 ? ' <span style="color:#c0392b">ロック中</span>' : '')
         + '<div class="sp"></div>'
-        + (現役 ? '<button class="btn gray" style="margin:0; padding:8px; font-size:13px;" onclick="admPin(\''+id+'\')">PIN再発行</button><div class="sp"></div>' : '')
-        + '<button class="btn gray" style="margin:0; padding:8px; font-size:13px;" onclick="admStaff(\''+id+'\',\'在職\',\''+(現役?'退職・異動':'在職')+'\')">'
-        + (現役 ? '退職・異動にする（ログイン不可）' : '在職に戻す') + '</button>'
+        + '<button class="btn gray" style="margin:0; padding:8px; font-size:13px;" onclick="admEditStaff(\''+id+'\')">編集</button>'
+        + (現役 ? '<div class="sp"></div><button class="btn gray" style="margin:0; padding:8px; font-size:13px;" onclick="admPin(\''+id+'\')">PIN再発行</button>' : '')
         + (s.ロック中 ? '<div class="sp"></div><button class="btn gray" style="margin:0; padding:8px; font-size:13px;" onclick="admUnlock(\''+id+'\')">ロック解除</button>' : '')
         + (現役 ? '<div class="sp"></div><button class="btn gray" style="margin:0; padding:8px; font-size:13px;" onclick="admQrReset(\''+id+'\')">QRを作り直す（今のカードが使えなくなります）</button>' : '')
         + '</div>';
@@ -1568,6 +1571,37 @@ function admAddUser(){
  * ★退去にしても記録は消えない。投稿画面の一覧に出なくなるだけ。
  *   過去の申し送りに残っている氏名も、書かれた当時のまま変えない。
  */
+/**
+ * 職員を編集する（氏名・よみ・権限・在職状況）。2026-08-22。
+ * ★「退職・異動」にすると、その方はログインできなくなる（開いている画面もその場で切れる）。
+ *   記録は消えない。過去の申し送りに残っている記載者名も、書かれた当時のまま変えない。
+ * ★自分で自分の管理者権限は外せない（サーバー側が断る）。
+ */
+function admEditStaff(id){
+  var s = (ST.職員元 || {})[id];
+  if(!s){ show('admMsg','その職員が見つかりません'); return; }
+  窓を開く_('職員の編集',
+    '「退職・異動」にすると、その方はログインできなくなります。\nこれまでの記録は消えません。',
+    [{名:'氏名', 型:'文字', 必須:true, 初期:s.氏名 || ''},
+     {名:'よみがな', 型:'文字', 初期:s.よみ || '', 補足:'ひらがなで（あとから探すときに使います）'},
+     {名:'権限', 型:'選ぶ', 候補:['一般','管理者'], 初期:s.権限 || '一般',
+      補足:'管理者は、職員や利用者の追加・CSV出力・非表示ができます'},
+     {名:'在職状況', 型:'選ぶ', 候補:['在職','退職・異動'], 初期:s.在職 || '在職'}],
+    '保存する').then(function(答え){
+    if(!答え) return;
+    call('管理_職員編集', ST.token, id, 答え['氏名'], 答え['よみがな'], 答え['権限'], 答え['在職状況'])
+      .then(function(res){
+        // 自分を直したときは、手元に覚えている自分の情報も入れ替える（画面の判定に使うため）
+        if(ST.me && String(ST.me.id) === String(id)){
+          ST.me.氏名 = 答え['氏名']; ST.me.権限 = 答え['権限'];
+        }
+        管理の控えを捨てる_();
+        setAdm('staff');
+        show('admMsg', res && res.変えなかった ? '変わっていません' : '保存しました', 'ok');
+      })
+      .catch(function(e){ if(!切れた(e)) show('admMsg', (e && e.message)); });
+  });
+}
 function admEditUser(id){
   var u = (ST.利用者元 || {})[id];
   if(!u){ show('admMsg','その利用者が見つかりません'); return; }
