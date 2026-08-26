@@ -424,7 +424,7 @@
 </div>
 
 <script>
-var 画面の版 = '015e5b240452';
+var 画面の版 = '81d1e2094d8f';
 // 申し送りのデータを預かっている場所（Googleのスプレッドシート側）
 var データの置き場 = 'https://moushiokuri-api.kazuya3789.workers.dev/';
 // QRカードから開いたときは、URLの ?k= に合言葉が入っている
@@ -1525,7 +1525,8 @@ function setAdm(t){
       + 'ドライブにある：' + esc(件.ドライブ==null?'—':件.ドライブ) + '件'
       + '（' + esc(s.ドライブにある容量MB==null?'—':s.ドライブにある容量MB) + 'MB）'
       + '　事務所PCに保管：' + esc(件.PC==null?'—':件.PC) + '件'
-      + '　取り出し中：' + esc(件.取り出し中==null?'—':件.取り出し中) + '件';
+      + '　取り出し中：' + esc(件.取り出し中==null?'—':件.取り出し中) + '件'
+      + (件.消す予定 ? '　削除の片づけ待ち：' + esc(件.消す予定) + '件' : '');
     (s.気になる || []).forEach(function(x){
       h += '<div style="color:#c00; margin-top:4px;">★' + esc(x) + '</div>';
     });
