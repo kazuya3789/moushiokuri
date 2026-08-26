@@ -424,7 +424,7 @@
 </div>
 
 <script>
-var 画面の版 = 'f307a4bbe805';
+var 画面の版 = '015e5b240452';
 // 申し送りのデータを預かっている場所（Googleのスプレッドシート側）
 var データの置き場 = 'https://moushiokuri-api.kazuya3789.workers.dev/';
 // QRカードから開いたときは、URLの ?k= に合言葉が入っている
@@ -1076,6 +1076,7 @@ function 裏で更新(){
   });
 }
 function renderDetail(r){
+  ST.detail = r;   // ★削除の確認で「一緒に消えるもの」を数えるのに使う
   var d = r.本体;
   var h = '<div class="card"><div class="blk"><h4>【元の記載】'+esc(d.投稿日時full)+'　'+esc(d.記載者名)+'（'+esc(d.勤務帯)+'）</h4>'
         + '<div class="body">'+esc(d.本文)+'</div>';
@@ -1109,6 +1110,11 @@ function renderDetail(r){
   }
   if(r.管理者)
     h += '<button class="btn danger" onclick="doHide()">非表示にする（管理者）</button>';
+  // ★削除は「戻せない」ので、いちばん最後に置く
+  if(r.削除可)
+    h += '<button class="btn danger" onclick="doDelete()">この申し送りを削除する（元に戻せません）</button>';
+  else if(r.削除できないわけ && ST.me && String(d.記載者ID) === String(ST.me.id))
+    h += '<div class="note" style="margin-top:8px;">' + esc(r.削除できないわけ) + '</div>';
   h += '<div id="添付欄" style="margin-top:14px;"></div>';
   h += '<div id="addBox" class="hide" style="margin-top:16px;">'
      + '<label id="addLabel">追記</label><textarea id="addBody" style="min-height:110px;"></textarea>'
@@ -1252,6 +1258,37 @@ function openSelfEdit(){
     .then(function(){ openDetail(ST.detailId); })
     .catch(function(e){ if(!切れた(e)) show('detailMsg', (e && e.message)); });
   });
+}
+/**
+ * 申し送りを削除する（2026-08-22）。★戻せない。
+ * ★押す前に「何が一緒に消えるか」を必ず見せる（訂正・追記／写真・動画の件数）。
+ *   数はいま画面に出ているものから作る＝サーバーへ聞き直さないので待たせない。
+ */
+function doDelete(){
+  var r = ST.detail, d = r && r.本体;
+  if(!d){ show('detailMsg','この申し送りが読み込めていません'); return; }
+  var 子数 = (r.子 || []).length;
+  var 添付数 = Number(d.添付数 || 0);
+  var 一緒に = [];
+  if(子数) 一緒に.push('訂正・追記 ' + 子数 + '件');
+  if(添付数) 一緒に.push('写真・動画 ' + 添付数 + '件');
+  var 改 = String.fromCharCode(10);
+  var 文 = '★元に戻せません。' + 改 + 改
+    + String(d.投稿日時full || '') + '　' + String(d.記載者名 || '')
+    + (d.利用者名 ? 改 + '利用者：' + d.利用者名 : '')
+    + 改 + 改 + 見出しに縮める_(d.本文)
+    + (一緒に.length ? 改 + 改 + '一緒に消えるもの：' + 一緒に.join('／') : '');
+  たずねる_('この申し送りを削除します', 文, '削除する').then(function(はい){
+    if(!はい) return;
+    call('削除', ST.token, ST.detailId)
+      .then(function(){ closeDetail(); })
+      .catch(function(e){ if(!切れた(e)) show('detailMsg', (e && e.message)); });
+  });
+}
+/** 長い本文は、どれを消すか分かる長さまで縮める（窓は文字で出すのでしるしは要らない） */
+function 見出しに縮める_(s){
+  var t = String(s == null ? '' : s).split(/[ \t\r\n\u3000]+/).join(' ');
+  return t.length > 120 ? t.slice(0, 120) + '…' : t;
 }
 function doHide(){
   窓を開く_('この申し送りを非表示にする', '記録は消えません。あとから「非表示一覧」から戻せます。',
