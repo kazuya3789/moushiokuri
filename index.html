@@ -89,6 +89,14 @@
   /* ★赤はやめた（本人の判断）。落ち着いた琥珀色で「重要」だけ知らせる */
   .chip.high{background:#fdf2df; color:#96660f; font-weight:700;}
   .chip.fix{background:#f1ece5; color:#7a6448;}
+  /* ★新着の赤い印（2026-09-01）。勤務帯のとなりに、少し大きめ・太字で出す */
+  .newmark{color:#d93025; font-weight:800; font-size:15px; flex:none;}
+  /* ★分類は複数選べる（2026-09-01）。指で押しやすい大きさにする */
+  .cats{display:flex; flex-wrap:wrap; gap:8px; margin:6px 0 4px;}
+  .cats label{display:flex; align-items:center; gap:6px; background:var(--chip);
+    color:#465967; border-radius:9px; padding:8px 11px; font-size:14px;}
+  .cats label.on{background:#d7ebe6; color:#0d6154; font-weight:700;}
+  .cats input{width:auto; margin:0; accent-color:var(--main);}
   .foot{margin-top:10px; padding-top:9px; border-top:1px solid #f0f3f5;
         font-size:12px; color:var(--sub); display:flex; gap:14px; flex-wrap:wrap;}
   /* ===== 「新しい申し送りがあります」の帯 =====
@@ -285,8 +293,8 @@
       <summary>＋ 詳しく（任意）</summary>
       <label>利用者</label>
       <select id="postUser"><option value="">（指定しない）</option></select>
-      <label>分類</label>
-      <select id="postCat"><option value="">（指定しない）</option></select>
+      <label>分類（いくつでも選べます）</label>
+      <div id="postCatBox" class="cats"></div>
       <div class="row">
         <div>
           <label>重要度</label>
@@ -424,7 +432,7 @@
 </div>
 
 <script>
-var 画面の版 = '552e149dd44c';
+var 画面の版 = 'e57d8773975a';
 // 申し送りのデータを預かっている場所（Googleのスプレッドシート側）
 var データの置き場 = 'https://moushiokuri-api.kazuya3789.workers.dev/';
 // QRカードから開いたときは、URLの ?k= に合言葉が入っている
@@ -790,8 +798,7 @@ function afterLogin(r, 先読み){
   document.getElementById('menuRole').textContent = r.職員.権限;
   document.getElementById('menuIcon').textContent = String(r.職員.氏名 || '？').trim().charAt(0);
   document.getElementById('adminBtn').classList.toggle('hide', r.職員.権限 !== '管理者');
-  document.getElementById('postCat').innerHTML = '<option value="">（指定しない）</option>' +
-    r.設定.分類.map(function(c){ return '<option>'+esc(c)+'</option>'; }).join('');
+  分類の枠を作る_('postCatBox', r.設定.分類);
   document.getElementById('sCat').innerHTML = '<option value="">（すべて）</option>' +
     r.設定.分類.map(function(c){ return '<option>'+esc(c)+'</option>'; }).join('');
   window.利用者を並べる = 利用者を並べる;   // ★投稿画面の取り直しから呼ぶ
@@ -878,7 +885,7 @@ function 一覧を描く(r, 頼んだ位置){
 function cardHtml(d){
   var chips = '';
   if(d.利用者名) chips += '<span class="chip user">'+esc(d.利用者名)+'</span>';
-  if(d.分類) chips += '<span class="chip">'+esc(d.分類)+'</span>';
+  chips += 分類のしるし_(d.分類);
   if(d.重要度==='高') chips += '<span class="chip high">重要</span>';
   if(d.訂正一致) chips += '<span class="chip fix">訂正・追記が一致</span>';
   if(d.添付数) chips += '<span class="chip">📎写真・動画'+d.添付数+'</span>';
@@ -895,6 +902,7 @@ function cardHtml(d){
     + '<span class="who">'+esc(d.記載者名)+'</span>'
     + '<span class="sep">|</span><span>'+esc(d.投稿日時)+'</span>'
     + (d.勤務帯 ? '<span class="shift'+(夜勤か?' night':'')+'">'+esc(d.勤務帯)+'</span>' : '')
+    + 新着のしるし_(d)
     + '</div>'
     + '<div class="body">'+esc(short)+'</div>'
     + (chips ? '<div class="chips">'+chips+'</div>' : '')
@@ -977,6 +985,117 @@ function 勤務帯の案内(){
       + 分を時刻_(c.日勤開始) + '〜' + 分を時刻_(c.日勤終了) + '）。違うときは選び直してください。'
     : '自動＝書いた時刻で決まります。違うときは選び直してください。';
 }
+
+// ===== 分類は複数選べる／新着の印／追記の写真・動画（2026-09-01）=====
+
+/**
+ * 分類のチェックを並べる。★選択肢は設定（管理画面）から来る。
+ * 押した見た目（.on）も切り替える＝スマホでは小さな丸だけだと分かりにくいため。
+ */
+function 分類の枠を作る_(枠ID, 候補){
+  var 枠 = document.getElementById(枠ID);
+  if(!枠) return;
+  枠.innerHTML = (候補 || []).map(function(c){
+    return '<label><input type="checkbox" value="'+esc(c)+'" onchange="分類を押した_(this)">'
+         + '<span>'+esc(c)+'</span></label>';
+  }).join('');
+}
+function 分類を押した_(入){
+  if(入 && 入.parentNode) 入.parentNode.className = 入.checked ? 'on' : '';
+}
+/** 選ばれている分類を配列で返す（サーバーは配列でもカンマ区切りでも受け取る） */
+function 選んだ分類_(枠ID){
+  var 枠 = document.getElementById(枠ID);
+  if(!枠) return [];
+  return Array.prototype.slice.call(枠.querySelectorAll('input:checked'))
+    .map(function(x){ return x.value; });
+}
+/** 分類のチェックを全部外す */
+function 分類を空にする_(枠ID){
+  var 枠 = document.getElementById(枠ID);
+  if(!枠) return;
+  Array.prototype.slice.call(枠.querySelectorAll('input')).forEach(function(x){
+    x.checked = false; 分類を押した_(x);
+  });
+}
+/** 「体調変化,服薬」を、1つずつのしるしにして返す */
+function 分類のしるし_(分類){
+  return String(分類 == null ? '' : 分類).split(',')
+    .filter(function(c){ return c.trim(); })
+    .map(function(c){ return '<span class="chip">'+esc(c.trim())+'</span>'; }).join('');
+}
+
+/**
+ * 勤務帯のとなりに出す赤い印。
+ *   新着     … まだ自分が見ていない申し送り
+ *   追記新着 … そのうえ、訂正・追記が付いているもの
+ * ★自分が開いて確認したら消える（オレンジの点とまったく同じ条件）。
+ *   訂正・追記が入ると全員「まだ見ていない」に戻るので、そのときまた出る
+ */
+function 新着のしるし_(d){
+  if(d.自分既読) return '';
+  return '<span class="newmark">' + (d.子件数 ? '追記新着' : '新着') + '</span>';
+}
+
+// ----- 追記に付ける写真・動画 -----
+var 追記の選んだファイル = [];
+function 追記のファイルを選んだ(){
+  var 入 = document.getElementById('addFiles');
+  追記の選んだファイル = Array.prototype.slice.call((入 && 入.files) || []);
+  var box = document.getElementById('addFileList');
+  if(!box) return;
+  box.innerHTML = 追記の選んだファイル.map(function(f){
+    return esc(f.name) + '（' + 大きさの表示(f.size) + '）';
+  }).join('<br>');
+}
+/** 追記に付けた写真・動画を送る（本文はもう保存できている） */
+function 追記の添付を送る(申し送りID){
+  if(!追記の選んだファイル.length) return Promise.resolve();
+  var 全 = 追記の選んだファイル.length;
+  var 表示 = document.getElementById('addProgress');
+  var p = Promise.resolve();
+  追記の選んだファイル.forEach(function(f, i){
+    p = p.then(function(){
+      return 添付を1つ送る(申し送りID, f, function(割合){
+        if(表示) 表示.textContent = '写真・動画を送っています（'+(i+1)+'／'+全+'）　'+割合+'%';
+      });
+    });
+  });
+  return p.then(function(){
+    if(表示) 表示.textContent = '';
+    追記の選んだファイル = [];
+  }).catch(function(e){
+    if(表示) 表示.textContent = '';
+    throw new Error('追記は保存できましたが、写真・動画を送れませんでした（'
+      + ((e && e.message)||'') + '）。詳細画面からもう一度お試しください。');
+  });
+}
+
+/**
+ * 訂正・追記そのものを消す（★書いた本人は1時間以内、管理者はいつでも）。
+ * ★消せるかどうかを決めるのはサーバー。ここは押せるボタンを出しているだけ。
+ */
+function 追記を消す(id){
+  var c = ((ST.detail && ST.detail.子) || []).filter(function(x){
+    return String(x.id) === String(id);
+  })[0];
+  if(!c) return;
+  var 改 = String.fromCharCode(10);
+  var 添付 = (ST.添付 || []).filter(function(a){
+    return String(a.申し送りID) === String(id);
+  }).length;
+  var 文 = 'この' + c.種別 + 'は、元に戻せません。' + 改 + 改
+    + String(c.投稿日時full || '') + '　' + String(c.記載者名 || '') + 改 + 改
+    + 見出しに縮める_(c.本文)
+    + (添付 ? 改 + 改 + '一緒に消えるもの：写真・動画 ' + 添付 + '件' : '');
+  たずねる_('この' + c.種別 + 'を削除します', 文, '削除する').then(function(はい){
+    if(!はい) return;
+    call('削除', ST.token, id)
+      .then(function(){ openDetail(ST.detailId, 'この' + c.種別 + 'を削除しました'); })
+      .catch(function(e){ if(!切れた(e)) show('detailMsg', (e && e.message)); });
+  });
+}
+
 function countBody(){
   var 上限 = (ST.conf && ST.conf.本文上限) || 5000;
   var n = document.getElementById('postBody').value.length;
@@ -994,7 +1113,7 @@ function doPost(){
   call('投稿', ST.token, {
     本文: body,
     利用者ID: document.getElementById('postUser').value,
-    分類: document.getElementById('postCat').value,
+    分類: 選んだ分類_('postCatBox'),
     重要度: document.getElementById('postLevel').value,
     勤務帯: document.getElementById('postShift').value,
     送り直し: (送信回数 > 1)
@@ -1004,7 +1123,7 @@ function doPost(){
   }).then(function(){
     btn.disabled=false; btn.textContent='送信する';
     document.getElementById('postUser').value='';
-    document.getElementById('postCat').value='';
+    分類を空にする_('postCatBox');
     document.getElementById('postBody').value='';
     closePage('postPage');
     reload();
@@ -1082,14 +1201,24 @@ function renderDetail(r){
         + '<div class="body">'+esc(d.本文)+'</div>';
   var chips='';
   if(d.利用者名) chips += '<span class="chip user">'+esc(d.利用者名)+'</span>';
-  if(d.分類) chips += '<span class="chip">'+esc(d.分類)+'</span>';
+  chips += 分類のしるし_(d.分類);
   if(d.重要度==='高') chips += '<span class="chip high">重要</span>';
   if(chips) h += '<div class="chips">'+chips+'</div>';
   if(r.修正回数) h += '<div class="note">※この記録は投稿直後に'+r.修正回数+'回修正されています（変更前の全文は版履歴に保存）</div>';
   h += '</div>';
   r.子.forEach(function(c){
+    var cしるし = 分類のしるし_(c.分類)
+      + (c.重要度==='高' ? '<span class="chip high">重要</span>' : '');
+    var cid = safeId(c.id);
     h += '<div class="blk '+(c.種別==='訂正'?'fix':'add')+'"><h4>【'+esc(c.種別)+'】'+esc(c.投稿日時full)+'　'+esc(c.記載者名)+'</h4>'
-       + '<div class="body">'+esc(c.本文)+'</div></div>';
+       + '<div class="body">'+esc(c.本文)+'</div>'
+       + (cしるし ? '<div class="chips">'+cしるし+'</div>' : '')
+       + '<div id="添付欄_'+cid+'"></div>'
+       + (c.削除可
+          ? '<button class="btn danger" style="margin:8px 0 0; padding:9px; font-size:13px;" onclick="追記を消す(\''+cid+'\')">この'+esc(c.種別)+'を削除する（元に戻せません）</button>'
+          : ((c.削除できないわけ && ST.me && String(c.記載者ID) === String(ST.me.id))
+             ? '<div class="note">'+esc(c.削除できないわけ)+'</div>' : ''))
+       + '</div>';
   });
   h += '<div class="foot" style="margin-top:12px;">✔確認済み：'
      + (r.既読者.length ? r.既読者.map(function(x){return esc(x.氏名);}).join('・') + '（'+r.既読者.length+'人）' : 'まだいません')
@@ -1118,6 +1247,12 @@ function renderDetail(r){
   h += '<div id="添付欄" style="margin-top:14px;"></div>';
   h += '<div id="addBox" class="hide" style="margin-top:16px;">'
      + '<label id="addLabel">追記</label><textarea id="addBody" style="min-height:110px;"></textarea>'
+     + '<label>分類（いくつでも選べます）</label><div id="addCatBox" class="cats"></div>'
+     + '<label>重要度</label>'
+     + '<select id="addLevel"><option>ふつう</option><option>高</option><option>低</option></select>'
+     + '<label>写真・動画</label>'
+     + '<input id="addFiles" type="file" accept="image/*,video/*" multiple onchange="追記のファイルを選んだ()">'
+     + '<div id="addFileList" class="note"></div><div id="addProgress" class="note"></div>'
      + '<button class="btn" id="addBtn" onclick="doAdd()">保存する</button></div>';
   document.getElementById('detailBody').innerHTML = h;
   if(ST.detailId) 添付を描く(ST.detailId);
@@ -1138,6 +1273,14 @@ function openAddBox(mode){
   document.getElementById('addLabel').textContent = mode==='訂正'
     ? '訂正の内容（元の記載はそのまま残ります）' : '追記の内容';
   document.getElementById('addBox').classList.remove('hide');
+  // ★前に書いた人の選択が残ったままにならないよう、開くたびに空にする
+  document.getElementById('addBody').value = '';
+  分類の枠を作る_('addCatBox', (ST.conf && ST.conf.分類) || []);
+  document.getElementById('addLevel').value = 'ふつう';
+  追記の選んだファイル = [];
+  var 入 = document.getElementById('addFiles'); if(入) 入.value = '';
+  document.getElementById('addFileList').textContent = '';
+  document.getElementById('addProgress').textContent = '';
   document.getElementById('addBody').focus();
 }
 function doAdd(){
@@ -1146,8 +1289,16 @@ function doAdd(){
   var btn = document.getElementById('addBtn');
   btn.disabled = true; btn.textContent = '保存中…';
   追記送信回数++;   // 2回目以降は「送り直し」としてサーバーに伝える（C4）
-  call('追記', ST.token, ST.detailId, addMode, t, 追記受付ID, (追記送信回数 > 1))
-    .then(function(){ openDetail(ST.detailId); })
+  call('追記', ST.token, ST.detailId, addMode, t, 追記受付ID, (追記送信回数 > 1),
+       { 分類: 選んだ分類_('addCatBox'), 重要度: document.getElementById('addLevel').value })
+    .then(function(id){
+      btn.textContent = '写真・動画を送信中…';
+      return 追記の添付を送る(id);
+    })
+    .then(function(){
+      btn.disabled = false; btn.textContent = '保存する';
+      openDetail(ST.detailId);
+    })
     .catch(function(e){
       btn.disabled = false; btn.textContent = '保存する';
       if(切れた(e)) return;
@@ -1928,10 +2079,34 @@ function 添付を描く(申し送りID){
   var 箱 = document.getElementById('添付欄');
   if(!箱) return;
   call('添付一覧', ST.token, 申し送りID).then(function(rows){
+    // ★2026-09-01＝訂正・追記にも写真・動画を付けられるようにした。
+    //   サーバーは元の記録と訂正・追記のぶんをまとめて返すので、ここで振り分ける
+    ST.添付 = rows || [];
+    var 追記の = {};
+    rows = (rows || []).filter(function(a){
+      var k = String(a.申し送りID || '');
+      // ★行き先が画面に無いものは、今までどおり元の記録のところに出す＝
+      //   振り分けにしくじっても、写真・動画がどこにも出ないことにはならない
+      if(k === String(申し送りID) || !document.getElementById('添付欄_' + k)) return true;
+      (追記の[k] = 追記の[k] || []).push(a);
+      return false;
+    });
+    Object.keys(追記の).forEach(function(k){
+      var 枠 = document.getElementById('添付欄_' + k);
+      if(!枠) return;
+      枠.innerHTML = '<label>写真・動画（' + 追記の[k].length + '件）</label><div>'
+                   + 追記の[k].map(添付1件_).join('') + '</div>';
+      追記の[k].forEach(見本を出す_);
+    });
     if(!rows.length){ 箱.innerHTML = ''; return; }
     箱.innerHTML = '<label>写真・動画（' + rows.length + '件）</label><div id="添付並び"></div>';
     var 並び = document.getElementById('添付並び');
-    並び.innerHTML = rows.map(function(a){
+    並び.innerHTML = rows.map(添付1件_).join('');
+    rows.forEach(見本を出す_);
+  }).catch(function(e){ if(!切れた(e)) 箱.innerHTML = '<div class="note">'+esc((e&&e.message)||'')+'</div>'; });
+}
+/** 写真・動画を1件ぶん描く（元の記録のぶんも、訂正・追記のぶんも同じ形） */
+function 添付1件_(a){
       var i = esc(a.id);
       return '<div class="list-item" id="添付_'+i+'">'
         + '<div style="color:var(--sub); font-size:12px;">'+esc(a.種類)+'　'+esc(a.ファイル名)
@@ -1946,15 +2121,14 @@ function 添付を描く(申し送りID){
                  : '<div class="note">見たいときは管理者に取り出しを依頼してください。</div>'))
         + '<div id="実物_'+i+'" style="margin-top:8px;"></div>'
         + '</div>';
-    }).join('');
-    rows.forEach(function(a){
-      if(!a.見本あり) return;
-      call('添付_見本', ST.token, a.id).then(function(d){
-        if(d) document.getElementById('見本_'+a.id).innerHTML =
-          '<img src="'+d+'" style="max-width:160px; border-radius:8px;">';
-      }).catch(function(){});
-    });
-  }).catch(function(e){ if(!切れた(e)) 箱.innerHTML = '<div class="note">'+esc((e&&e.message)||'')+'</div>'; });
+}
+/** 見本（小さな画像）をあとから入れる */
+function 見本を出す_(a){
+  if(!a.見本あり) return;
+  call('添付_見本', ST.token, a.id).then(function(d){
+    var 枠 = document.getElementById('見本_'+a.id);
+    if(d && 枠) 枠.innerHTML = '<img src="'+d+'" style="max-width:160px; border-radius:8px;">';
+  }).catch(function(){});
 }
 
 function 添付を開く(id, 種類){
