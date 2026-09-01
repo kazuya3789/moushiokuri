@@ -432,7 +432,7 @@
 </div>
 
 <script>
-var 画面の版 = 'e57d8773975a';
+var 画面の版 = '519377b99066';
 // 申し送りのデータを預かっている場所（Googleのスプレッドシート側）
 var データの置き場 = 'https://moushiokuri-api.kazuya3789.workers.dev/';
 // QRカードから開いたときは、URLの ?k= に合言葉が入っている
@@ -555,8 +555,22 @@ function そっと見に行く(){
 function 届いたぶんを足す(r){
   var 届いた = r && r.items ? r.items : [];
   var いま出ている = {};
-  (ST.一覧 || []).forEach(function(x){ いま出ている[String(x.id)] = true; });
-  var 新しい = 届いた.filter(function(x){ return !いま出ている[String(x.id)]; });
+  (ST.一覧 || []).forEach(function(x){ いま出ている[String(x.id)] = x; });
+  // ★訂正・追記が入ると、元の記録は「いちばん上へ上がって、また未読に戻る」。
+  //   idは増えないので、そのままだと「もう出ている＝新しくない」と数えられ、
+  //   🔴**古い場所に、古いまま（既読のまま）居座る**＝開きっぱなしの人に追記が届かない。
+  //   → 中身が変わったものは「新しいもの」と同じ扱いにして、上へ出し直す。
+  var 入れ替える = {};
+  届いた.forEach(function(x){
+    var 前 = いま出ている[String(x.id)];
+    if(!前) return;
+    if(Number(前.子件数 || 0) !== Number(x.子件数 || 0)
+       || !!前.自分既読 !== !!x.自分既読
+       || String(前.本文 || '') !== String(x.本文 || '')) 入れ替える[String(x.id)] = true;
+  });
+  var 新しい = 届いた.filter(function(x){
+    return !いま出ている[String(x.id)] || 入れ替える[String(x.id)];
+  });
   if(!新しい.length) return;
 
   // 取ってきた1ページぶんが丸ごと新しい＝その先にも抜けがあるかもしれないので、作り直す
@@ -571,9 +585,11 @@ function 届いたぶんを足す(r){
   var 箱 = document.getElementById('list');
   // ★「いま読んでいるカード」そのものを目印にして、それが画面上で動かないようにする。
   //   高さの引き算だと、あとから出す「◯件 届きました」の帯のぶんがずれる（実際に1枚ぶんずれた）。
+  //   ★目印は、これから取り除くカード以外から選ぶ（消える札を目印にはできない）。
   var 目印 = null, 目印の位置 = 0;
   var いまのカード = 箱.querySelectorAll('.card');
   for(var i = 0; i < いまのカード.length; i++){
+    if(入れ替える[String(いまのカード[i].getAttribute('data-id'))]) continue;
     if(いまのカード[i].getBoundingClientRect().top >= 0){
       目印 = いまのカード[i];
       break;
@@ -581,9 +597,20 @@ function 届いたぶんを足す(r){
   }
   // ★1枚も見つからないとき（いちばん下まで読んでいて、最後のカードが画面より背が高い等）は
   //   最後のカードを目印にする。目印が無いと打ち消しができず、位置が飛ぶ
-  if(!目印 && いまのカード.length) 目印 = いまのカード[いまのカード.length - 1];
+  if(!目印){
+    for(var j = いまのカード.length - 1; j >= 0; j--){
+      if(!入れ替える[String(いまのカード[j].getAttribute('data-id'))]){ 目印 = いまのカード[j]; break; }
+    }
+  }
   if(目印) 目印の位置 = 目印.getBoundingClientRect().top;
   var 前の高さ = document.documentElement.scrollHeight;   // 目印すら無いときの保険
+  // ★古いほうの札を取り除くのは、目印を測ったあと。
+  //   先に取り除くと、そのぶんの高さが打ち消されず、読んでいる場所が飛ぶ
+  Object.keys(入れ替える).forEach(function(k){
+    var 古 = 箱.querySelector('.card[data-id="' + k + '"]');
+    if(古 && 古.parentNode) 古.parentNode.removeChild(古);
+  });
+  ST.一覧 = (ST.一覧 || []).filter(function(y){ return !入れ替える[String(y.id)]; });
   箱.insertAdjacentHTML('afterbegin', 新しい.map(cardHtml).join(''));
   ST.一覧 = 新しい.concat(ST.一覧 || []);
   知らせる(新しい.length);   // 帯もここで出す（場所を取るので、ずらすのはこのあと）
@@ -894,7 +921,8 @@ function cardHtml(d){
   var id = safeId(d.id);
   var 頭文字 = String(d.記載者名 || '？').trim().charAt(0);
   var 夜勤か = (String(d.勤務帯 || '') === '夜勤');
-  return '<div class="card tap' + (d.重要度==='高' ? ' hi' : '') + '" onclick="openDetail(\''+id+'\')">'
+  return '<div class="card tap' + (d.重要度==='高' ? ' hi' : '') + '" data-id="'+id+'"'
+    + ' onclick="openDetail(\''+id+'\')">'
     + '<span class="chev">›</span>'
     + '<div class="cardtop"><span class="avatar">'+esc(頭文字)+'</span><div class="cardmain">'
     + '<div class="meta">'
@@ -1051,13 +1079,18 @@ function 追記のファイルを選んだ(){
 /** 追記に付けた写真・動画を送る（本文はもう保存できている） */
 function 追記の添付を送る(申し送りID){
   if(!追記の選んだファイル.length) return Promise.resolve();
-  var 全 = 追記の選んだファイル.length;
+  // ★投稿と同じ＝送れたものはその場で控えから外す（送り直しで二重にしない）
+  var 送るもの = 追記の選んだファイル.slice();
+  var 全 = 送るもの.length;
   var 表示 = document.getElementById('addProgress');
   var p = Promise.resolve();
-  追記の選んだファイル.forEach(function(f, i){
+  送るもの.forEach(function(f, i){
     p = p.then(function(){
       return 添付を1つ送る(申し送りID, f, function(割合){
         if(表示) 表示.textContent = '写真・動画を送っています（'+(i+1)+'／'+全+'）　'+割合+'%';
+      }).then(function(){
+        var k = 追記の選んだファイル.indexOf(f);
+        if(k >= 0) 追記の選んだファイル.splice(k, 1);
       });
     });
   });
@@ -1220,8 +1253,15 @@ function renderDetail(r){
              ? '<div class="note">'+esc(c.削除できないわけ)+'</div>' : ''))
        + '</div>';
   });
+  // ★『いまの内容を確認した人』と『追記より前に確認した人』を分ける。
+  //   分けないと、一覧のカードの「✔確認 0人」と食い違って見える。
+  //   ★いまの内容 が無い返事（古いサーバー）は、今までどおり全員をそのまま出す
+  var いま確認 = (r.既読者 || []).filter(function(x){ return x.いまの内容 !== false; });
+  var 前に確認 = (r.既読者 || []).filter(function(x){ return x.いまの内容 === false; });
   h += '<div class="foot" style="margin-top:12px;">✔確認済み：'
-     + (r.既読者.length ? r.既読者.map(function(x){return esc(x.氏名);}).join('・') + '（'+r.既読者.length+'人）' : 'まだいません')
+     + (いま確認.length ? いま確認.map(function(x){return esc(x.氏名);}).join('・') + '（'+いま確認.length+'人）' : 'まだいません')
+     + (前に確認.length ? '<div class="note" style="margin-top:4px;">※追記より前に確認：'
+        + 前に確認.map(function(x){return esc(x.氏名);}).join('・') + '（'+前に確認.length+'人）</div>' : '')
      + '</div></div>';
 
   h += '<button class="btn sub" onclick="openAddBox(\'追記\')">追記する</button>';
@@ -1418,8 +1458,13 @@ function openSelfEdit(){
 function doDelete(){
   var r = ST.detail, d = r && r.本体;
   if(!d){ show('detailMsg','この申し送りが読み込めていません'); return; }
-  var 子数 = (r.子 || []).length;
-  var 添付数 = Number(d.添付数 || 0);
+  // ★サーバーが数えた「一緒に消えるもの」を使う（2026-09-01）。
+  //   画面に出ているぶんだけで数えると、追記に付いた写真や、
+  //   非表示にした訂正・追記が数に入らず、黙って消えてしまう。
+  //   ★古いサーバー（その数を返さない）のときは、今までどおり画面の数で出す
+  var 子数 = (r.削除で消える子 != null) ? Number(r.削除で消える子) : (r.子 || []).length;
+  var 添付数 = (r.削除で消える添付 != null) ? Number(r.削除で消える添付)
+                                          : Number(d.添付数 || 0);
   var 一緒に = [];
   if(子数) 一緒に.push('訂正・追記 ' + 子数 + '件');
   if(添付数) 一緒に.push('写真・動画 ' + 添付数 + '件');
@@ -2053,13 +2098,20 @@ function 添付を1つ送る(申し送りID, file, 進捗){
 /** 選んだものを順に送る */
 function 添付をまとめて送る(申し送りID){
   if(!選んだファイル.length) return Promise.resolve();
-  var 全 = 選んだファイル.length;
+  var 送るもの = 選んだファイル.slice();
+  var 全 = 送るもの.length;
   var 表示 = document.getElementById('postProgress');
   var p = Promise.resolve();
-  選んだファイル.forEach(function(f, i){
+  // ★送るのは控えの写し。送れたものは、その場で控えから外す（2026-09-01）。
+  //   🔴外さないと、2枚目で失敗して送り直したときに**1枚目が二重に登録される**
+  //     （本文の二重登録は受付IDで防いでいるが、写真は1枚ずつ別の登録）
+  送るもの.forEach(function(f, i){
     p = p.then(function(){
       return 添付を1つ送る(申し送りID, f, function(割合){
         表示.textContent = '写真・動画を送っています（' + (i+1) + '／' + 全 + '）　' + 割合 + '%';
+      }).then(function(){
+        var k = 選んだファイル.indexOf(f);
+        if(k >= 0) 選んだファイル.splice(k, 1);
       });
     });
   });
