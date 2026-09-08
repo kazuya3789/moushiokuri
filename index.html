@@ -742,7 +742,17 @@ window.addEventListener('load', function(){
     //   知らせもログイン画面側に出るので、一覧を出したままだと誰も気づけない。
     端末の控えを消す_();
     ST.token = null;
+    ST.一覧 = [];
+    ST.detail = null;
     document.getElementById('list').innerHTML = '';
+    // ⚠ 2026-09-08（ASTRAレビュー・申し送り画面6）：以前は main を隠すだけだったので、
+    //   上に重なっている詳細・検索・投稿の画面に**本文が出たまま**残っていた。
+    //   本文を持つ画面はまとめて閉じて中身も消す。
+    ['detailPage','postPage','searchPage','adminPage','menuPage','resultPage'].forEach(function(id){
+      var el = document.getElementById(id);
+      if(el) el.classList.add('hide');
+    });
+    var db = document.getElementById('detailBody'); if(db) db.innerHTML = '';
     document.getElementById('main').classList.add('hide');
     document.getElementById('loginPage').classList.remove('hide');
     show('loginMsg', '読み込めませんでした：' + ((e && e.message) || '') + '　もう一度開き直してください');
@@ -857,8 +867,23 @@ function afterLogin(r, 先読み){
 function doLogout(){
   call('ログアウト', ST.token).catch(function(){}).then(function(){
     端末の控えを消す_();
+    // ⚠ 2026-09-08（ASTRAレビュー・申し送り画面5）：QRカードから入ると URL に
+    //   ?k=… が残る。以前はそのまま読み直していたので、
+    //   「ログアウト（職員を切り替える）」を押しても**同じ職員で入り直して**いた。
+    //   共有端末で切り替えができない。読み直す前に鍵をURLから外す。
+    QRキーをURLから外す_();
     location.reload();
   });
+}
+/** URL に付いている QRの鍵(?k=…) を消す。画面はそのまま。 */
+function QRキーをURLから外す_(){
+  try{
+    var u = new URL(location.href);
+    if(u.searchParams.has('k')){
+      u.searchParams.delete('k');
+      history.replaceState(null, '', u.pathname + (u.search || '') + (u.hash || ''));
+    }
+  }catch(e){}
 }
 
 // ===== 一覧 =====
@@ -1207,9 +1232,16 @@ function 手元の詳細_(id){
            自己修正可: false, 修正回数: 0, 管理者: !!(ST.me && ST.me.権限==='管理者'), 途中: true };
 }
 
+var 詳細世代 = 0;
 function openDetail(id, 済ませた文){
   id = safeId(id);
   if(!id) return;
+  // ⚠ 2026-09-08（ASTRAレビュー・申し送り画面1）：ST.detailId を「開いた時」と
+  //   「返事が来た時」の2回書いていたため、通信が遅いと
+  //   Aを開く→戻る→Bを開く→Bを消す、の途中でAの返事が届いて **Aが消える**
+  //   （確認の窓にはBの本文が出ているのに、送られるのはAの削除）。
+  //   世代番号を付けて、古い返事は捨てる。
+  var 世代 = ++詳細世代;
   ST.detailId = id;
   document.getElementById('detailBody').innerHTML = '<div class="loading">読み込み中…</div>';
   show('detailMsg','');
@@ -1217,11 +1249,13 @@ function openDetail(id, 済ませた文){
   var 手元 = 手元の詳細_(id);
   if(手元){ renderDetail(手元); show('detailMsg','最新を確認しています…','ok'); }
   call('詳細取得', ST.token, id).then(function(r){
+    if(世代 !== 詳細世代) return;         // もう別のものを開いている＝この返事は捨てる
     ST.detailId = r.本体.id;
     renderDetail(r);
     show('detailMsg', 済ませた文 || '', 'ok');
     if(!r.自分既読) call('既読にする', ST.token, r.本体.id).catch(function(){});
   }).catch(function(e){
+    if(世代 !== 詳細世代) return;
     if(切れた(e)) return;
     document.getElementById('detailBody').innerHTML = '';
     show('detailMsg', (e && e.message) || '読み込みに失敗しました');
@@ -1487,6 +1521,11 @@ function openSelfEdit(){
 function doDelete(){
   var r = ST.detail, d = r && r.本体;
   if(!d){ show('detailMsg','この申し送りが読み込めていません'); return; }
+  // ⚠ 2026-09-08（ASTRAレビュー・申し送り画面1）：確認の窓に出した本文と、
+  //   実際に消すものを**同じデータから**決める。以前は窓を出したあとに
+  //   ST.detailId を読んでいたので、待っている間に別の詳細の返事が届くと
+  //   「Bを確認したのにAが消える」ことが起こりえた。
+  var 対象ID = d.id;
   // ★サーバーが数えた「一緒に消えるもの」を使う（2026-09-01）。
   //   画面に出ているぶんだけで数えると、追記に付いた写真や、
   //   非表示にした訂正・追記が数に入らず、黙って消えてしまう。
@@ -1505,7 +1544,7 @@ function doDelete(){
     + (一緒に.length ? 改 + 改 + '一緒に消えるもの：' + 一緒に.join('／') : '');
   たずねる_('この申し送りを削除します', 文, '削除する').then(function(はい){
     if(!はい) return;
-    call('削除', ST.token, ST.detailId)
+    call('削除', ST.token, 対象ID)
       .then(function(){ closeDetail(); })
       .catch(function(e){ if(!切れた(e)) show('detailMsg', (e && e.message)); });
   });
@@ -1516,10 +1555,11 @@ function 見出しに縮める_(s){
   return t.length > 120 ? t.slice(0, 120) + '…' : t;
 }
 function doHide(){
+  var 対象ID = ST.detailId;   // 窓を開く前に対象を固定する（doDelete と同じ理由）
   窓を開く_('この申し送りを非表示にする', '記録は消えません。あとから「非表示一覧」から戻せます。',
     [{名:'非表示にする理由', 型:'文字', 必須:true}], '非表示にする').then(function(答え){
     if(!答え) return;
-    call('管理_非表示にする', ST.token, ST.detailId, 答え['非表示にする理由'])
+    call('管理_非表示にする', ST.token, 対象ID, 答え['非表示にする理由'])
       .then(function(){ closeDetail(); })
       .catch(function(e){ if(!切れた(e)) show('detailMsg', (e && e.message)); });
   });
