@@ -955,6 +955,18 @@ function openPost(){
   document.getElementById('postCount').textContent='';
   show('postMsg','');
   受付ID = uuid();
+  // ⚠ 2026-09-08（ASTRAレビュー・申し送り画面2）：ここで消していたのは
+  //   勤務帯・本文・受付ID だけで、**利用者・分類・重要度・選んだ写真は残っていた**。
+  //   Aさんの写真を付けて書きかけでやめ、次にBさんのことを書いて送ると、
+  //   Bさんの内容がAさんに紐づき、Aさんの写真まで一緒に付いてしまう。
+  //   新しい投稿を開くときは、任意の欄もまとめて空に戻す。
+  document.getElementById('postUser').value = '';
+  分類を空にする_('postCatBox');
+  document.getElementById('postLevel').value = 'ふつう';
+  選んだファイル = [];
+  var _pf = document.getElementById('postFiles'); if(_pf) _pf.value = '';
+  var _pl = document.getElementById('postFileList'); if(_pl) _pl.textContent = '';
+  var _pp = document.getElementById('postProgress'); if(_pp) _pp.textContent = '';
   document.getElementById('postPage').classList.remove('hide');
   setTimeout(function(){ document.getElementById('postBody').focus(); }, 100);
   名簿をそっと取り直す();
@@ -967,13 +979,21 @@ function openPost(){
  */
 function 名簿をそっと取り直す(){
   if(!ST.token) return;
-  var 選 = document.getElementById('postUser');
-  var 選んでいた = 選 ? 選.value : '';
+  // ⚠ 2026-09-08（ASTRAレビュー・申し送り画面4）：以前は**通信を始める前**に選択を覚えていた。
+  //   名簿の取り直しは投稿画面を開いた直後に走るので、返事が届くまでの数秒のあいだに
+  //   職員が利用者を選ぶと、届いた時点で選択肢が作り直され、**選んだ人が黙って元に戻る**。
+  //   （開いた時が空欄なら「指定しない」に戻り、利用者なしの申し送りになる）
+  //   覚えるのは「作り直す直前」＝いま画面で選ばれている値にする。
   call('利用者一覧', ST.token).then(function(us){
+    var 選 = document.getElementById('postUser');
+    var 選んでいた = 選 ? 選.value : '';
     利用者を並べる(us);
     if(選んでいた && 選){
       選.value = 選んでいた;
-      if(選.value !== 選んでいた) 選.value = '';   // もう居ない人だった
+      if(選.value !== 選んでいた){                  // もう居ない人だった
+        選.value = '';
+        show('postMsg', '選んでいた利用者が名簿から外れました。選び直してください');
+      }
     }
   }).catch(function(){});   // つながらなくても、いまの名簿のまま書ける
 }
@@ -1143,6 +1163,11 @@ function doPost(){
   var btn = document.getElementById('postBtn');
   btn.disabled = true; btn.textContent = '送信中…';
   送信回数++;   // 2回目以降は「送り直し」としてサーバーに伝える（C4）
+  // ⚠ 2026-09-08（ASTRAレビュー・申し送り画面3）：写真の一覧を決めるのが
+  //   **本文保存の返事が返ったあと**だったため、通信が遅いあいだに「戻る→＋」で
+  //   次の投稿を書いて写真を選ぶと、**次の投稿の写真が前の投稿へ付いて**いた。
+  //   送信ボタンを押した時点の写真を、この送信ぶんとして固定する。
+  var この送信のファイル = 選んだファイル.slice();
   call('投稿', ST.token, {
     本文: body,
     利用者ID: document.getElementById('postUser').value,
@@ -1152,12 +1177,16 @@ function doPost(){
     送り直し: (送信回数 > 1)
   }, 受付ID).then(function(id){
     btn.textContent='写真・動画を送信中…';
-    return 添付をまとめて送る(id);
+    return 添付をまとめて送る(id, この送信のファイル);
   }).then(function(){
     btn.disabled=false; btn.textContent='送信する';
     document.getElementById('postUser').value='';
     分類を空にする_('postCatBox');
     document.getElementById('postBody').value='';
+    // 送り終えたので、この画面の写真の選択も空に戻す（次の投稿へ持ち越さない）
+    選んだファイル = [];
+    var _f = document.getElementById('postFiles'); if(_f) _f.value = '';
+    var _fl = document.getElementById('postFileList'); if(_fl) _fl.textContent = '';
     closePage('postPage');
     reload();
     window.scrollTo(0,0);
@@ -2096,9 +2125,12 @@ function 添付を1つ送る(申し送りID, file, 進捗){
 }
 
 /** 選んだものを順に送る */
-function 添付をまとめて送る(申し送りID){
-  if(!選んだファイル.length) return Promise.resolve();
-  var 送るもの = 選んだファイル.slice();
+function 添付をまとめて送る(申し送りID, この送信のファイル){
+  // ⚠ 2026-09-08（ASTRAレビュー・申し送り画面3）：呼び出し側が「送信ボタンを押した時点」で
+  //   固定した一覧を受け取る。省略されたときだけ、今までどおり今の選択を使う。
+  var 元 = この送信のファイル || 選んだファイル;
+  if(!元.length) return Promise.resolve();
+  var 送るもの = 元.slice();
   var 全 = 送るもの.length;
   var 表示 = document.getElementById('postProgress');
   var p = Promise.resolve();
@@ -2110,16 +2142,28 @@ function 添付をまとめて送る(申し送りID){
       return 添付を1つ送る(申し送りID, f, function(割合){
         表示.textContent = '写真・動画を送っています（' + (i+1) + '／' + 全 + '）　' + 割合 + '%';
       }).then(function(){
-        var k = 選んだファイル.indexOf(f);
-        if(k >= 0) 選んだファイル.splice(k, 1);
+        // 送れたものは、この送信ぶんの控えから外す（送り直しでの二重登録を防ぐ）。
+        var k = 元.indexOf(f);
+        if(k >= 0) 元.splice(k, 1);
+        // いま画面で選ばれている一覧にも同じものが居れば、そちらからも外す。
+        // ⚠ 2026-09-08：以前は 選んだファイル だけを触っていたため、
+        //   送信中に次の投稿を開いていると**次の投稿の選択を削って**いた。
+        if(元 !== 選んだファイル){
+          var k2 = 選んだファイル.indexOf(f);
+          if(k2 >= 0) 選んだファイル.splice(k2, 1);
+        }
       });
     });
   });
   return p.then(function(){
     表示.textContent = '';
-    選んだファイル = [];
-    var 入 = document.getElementById('postFiles'); if(入) 入.value = '';
-    document.getElementById('postFileList').textContent = '';
+    // 画面の選択を空にするのは、いま送ったぶんが画面のものと同じときだけ
+    // （次の投稿を書き始めていたら、その選択を消さない）。
+    if(元 === 選んだファイル){
+      選んだファイル = [];
+      var 入 = document.getElementById('postFiles'); if(入) 入.value = '';
+      document.getElementById('postFileList').textContent = '';
+    }
   }).catch(function(e){
     表示.textContent = '';
     throw new Error('本文は保存できましたが、写真・動画を送れませんでした（' + ((e && e.message)||'') + '）。詳細画面からもう一度お試しください。');
