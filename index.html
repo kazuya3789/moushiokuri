@@ -432,7 +432,7 @@
 </div>
 
 <script>
-var 画面の版 = '519377b99066';
+var 画面の版 = 'b2b40d7de848';
 // 申し送りのデータを預かっている場所（Googleのスプレッドシート側）
 var データの置き場 = 'https://moushiokuri-api.kazuya3789.workers.dev/';
 // QRカードから開いたときは、URLの ?k= に合言葉が入っている
@@ -552,6 +552,41 @@ function そっと見に行く(){
  * ★読んでいる途中で位置が動かないよう、足したぶんの高さだけ画面をずらして打ち消す。
  *   （丸ごと作り直すと、読んでいた場所が分からなくなる）
  */
+/** カードに出している中身をひとつなぎにする（変わったかどうかを見くらべる用） */
+function カードの見た目_(x){
+  return ['本文','勤務帯','重要度','分類','利用者名','記載者名','投稿日時full','添付数','子件数']
+    .map(function(k){ return String(x[k] == null ? '' : x[k]); })
+    .concat([x.自分既読 ? '1' : '0']).join('\u0001');
+}
+
+/**
+ * 削除・非表示で消えたカードのidを返す（分からないときは空の配列）。
+ * ★ページ分けがあるので「先頭ページに無い＝消えた」とは決められない。
+ *   ・続きが無い（next が無い）＝これで全部 → 届かなかったものは消えたとみなす
+ *   ・続きがある → 「届いた最後の1件」より新しい範囲だけを見る
+ *     （その1件がいまの一覧に無ければ、範囲を決められないので何もしない）
+ */
+function 消えたものを見つける_(r, 届いた, いまの一覧){
+  var 届いた印 = {};
+  届いた.forEach(function(x){ 届いた印[String(x.id)] = true; });
+  if(!(r && r.next)){
+    return いまの一覧.filter(function(y){ return !届いた印[String(y.id)]; })
+                     .map(function(y){ return String(y.id); });
+  }
+  if(!届いた.length) return [];
+  var 最後 = String(届いた[届いた.length - 1].id);
+  var k = -1;
+  for(var i = 0; i < いまの一覧.length; i++){
+    if(String(いまの一覧[i].id) === 最後){ k = i; break; }
+  }
+  if(k < 0) return [];
+  var 消えた = [];
+  for(var j = 0; j < k; j++){
+    if(!届いた印[String(いまの一覧[j].id)]) 消えた.push(String(いまの一覧[j].id));
+  }
+  return 消えた;
+}
+
 function 届いたぶんを足す(r){
   var 届いた = r && r.items ? r.items : [];
   var いま出ている = {};
@@ -564,10 +599,27 @@ function 届いたぶんを足す(r){
   届いた.forEach(function(x){
     var 前 = いま出ている[String(x.id)];
     if(!前) return;
-    if(Number(前.子件数 || 0) !== Number(x.子件数 || 0)
-       || !!前.自分既読 !== !!x.自分既読
-       || String(前.本文 || '') !== String(x.本文 || '')) 入れ替える[String(x.id)] = true;
+    // ⚠ 2026-09-08（ASTRAレビュー・申し送り画面8）：以前は 子件数・自分既読・本文 の
+    //   3つしか見ていなかった。ほかの職員が勤務帯・重要度・分類を直しても、
+    //   写真が増えても、**開きっぱなしの画面には反映されなかった**。
+    //   カードに出しているものをまとめて見くらべる。
+    if(カードの見た目_(前) !== カードの見た目_(x)) 入れ替える[String(x.id)] = true;
   });
+  // ⚠ 同・画面8：削除・非表示になったものは返事から消えるだけで、カードを取り除く
+  //   処理が無かった＝**消えた申し送りの本文が画面に出たまま**になっていた。
+  var 消えた = 消えたものを見つける_(r, 届いた, ST.一覧 || []);
+  if(消えた.length){
+    var 消す = {};
+    var 箱0 = document.getElementById('list');
+    消えた.forEach(function(k){
+      消す[k] = true;
+      var 札 = 箱0 && 箱0.querySelector('.card[data-id="' + k + '"]');
+      if(札 && 札.parentNode) 札.parentNode.removeChild(札);
+    });
+    ST.一覧 = (ST.一覧 || []).filter(function(y){ return !消す[String(y.id)]; });
+    いま出ている = {};
+    (ST.一覧 || []).forEach(function(y){ いま出ている[String(y.id)] = y; });
+  }
   var 新しい = 届いた.filter(function(x){
     return !いま出ている[String(x.id)] || 入れ替える[String(x.id)];
   });
@@ -1253,7 +1305,18 @@ function openDetail(id, 済ませた文){
     ST.detailId = r.本体.id;
     renderDetail(r);
     show('detailMsg', 済ませた文 || '', 'ok');
-    if(!r.自分既読) call('既読にする', ST.token, r.本体.id).catch(function(){});
+    // ⚠ 2026-09-08（ASTRAレビュー・申し送り画面9）：ここは失敗を握りつぶしていた。
+    //   本文は読めているので本人は「確認した」つもりでも、
+    //   ほかの職員からは**いつまでも未確認のまま**になる。だから必ず知らせる。
+    if(!r.自分既読){
+      var 既読の相手 = r.本体.id;
+      call('既読にする', ST.token, 既読の相手).catch(function(e){
+        if(切れた(e)) return;
+        if(世代 !== 詳細世代) return;   // もう別のものを開いている
+        show('detailMsg', '「確認しました」の記録が保存できませんでした。'
+           + 'この画面を閉じて、もう一度開いてください');
+      });
+    }
   }).catch(function(e){
     if(世代 !== 詳細世代) return;
     if(切れた(e)) return;
@@ -1327,6 +1390,15 @@ function renderDetail(r){
         + 前に確認.map(function(x){return esc(x.氏名);}).join('・') + '（'+前に確認.length+'人）</div>' : '')
      + '</div></div>';
 
+  // ⚠ 2026-09-08（ASTRAレビュー・申し送り画面7）：一覧の中身だけで作った「仮の詳細」でも
+  //   追記・訂正のボタンが出ていた。書き始めたところへ正式な返事が届くと、
+  //   detailBody を丸ごと作り直すので**書きかけの本文・分類・選んだ写真が消える**。
+  //   仮のあいだは読むだけにする（正式な返事はふつう1秒ほどで届く）。
+  if(r.途中){
+    h += '<div class="note" style="margin-top:10px;">最新を確認しています。'
+       + '届いたら、追記・訂正などができます。</div>';
+  }
+  if(!r.途中){
   h += '<button class="btn sub" onclick="openAddBox(\'追記\')">追記する</button>';
   h += '<button class="btn sub" onclick="openAddBox(\'訂正\')">訂正する</button>';
   if(r.自己修正可)
@@ -1347,6 +1419,7 @@ function renderDetail(r){
     h += '<button class="btn danger" onclick="doDelete()">この申し送りを削除する（元に戻せません）</button>';
   else if(r.削除できないわけ && ST.me && String(d.記載者ID) === String(ST.me.id))
     h += '<div class="note" style="margin-top:8px;">' + esc(r.削除できないわけ) + '</div>';
+  }
   h += '<div id="添付欄" style="margin-top:14px;"></div>';
   h += '<div id="addBox" class="hide" style="margin-top:16px;">'
      + '<label id="addLabel">追記</label><textarea id="addBody" style="min-height:110px;"></textarea>'
@@ -1681,6 +1754,9 @@ function setAdm(t){
   Array.prototype.forEach.call(document.querySelectorAll('.adm-tabs button'), function(b){
     b.classList.toggle('on', b.dataset.adm === t);
   });
+  // ⚠ 2026-09-08（ASTRAレビュー・申し送り画面10）：CSVタブは 管理で呼ぶ_ を通らないので、
+  //   ここで世代を進めておかないと、先に頼んだ返事が CSV の画面を上書きしてしまう。
+  管理の世代_++;
   管理のいまのタブ_ = t;
   var box = document.getElementById('admBody');
   // ★控えがあるときは「読み込み中…」を出さない（一瞬の空白を作らないため）
@@ -1781,7 +1857,9 @@ function setAdm(t){
       + '<div id="qrOut" style="margin-top:12px;"></div>';
   }).catch(失敗);
 
-  if(t==='setting') call('管理_設定一覧', ST.token).then(function(r){
+  // ⚠ 2026-09-08（ASTRAレビュー・申し送り画面10）：設定だけ 管理で呼ぶ_ を通っておらず、
+  //   取得中に別のタブへ移ると、**そのタブの中身が設定に置き換わり、入力も消えて**いた。
+  if(t==='setting') 管理で呼ぶ_(t, '管理_設定一覧', ST.token).then(function(r){
     ST.設定元 = {};
     var s = r.吸い出し || {};
     var 件 = s.件数 || {};
