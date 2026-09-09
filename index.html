@@ -432,7 +432,7 @@
 </div>
 
 <script>
-var 画面の版 = 'b2b40d7de848';
+var 画面の版 = 'd0e739ad876d';
 // 申し送りのデータを預かっている場所（Googleのスプレッドシート側）
 var データの置き場 = 'https://moushiokuri-api.kazuya3789.workers.dev/';
 // QRカードから開いたときは、URLの ?k= に合言葉が入っている
@@ -620,10 +620,34 @@ function 届いたぶんを足す(r){
     いま出ている = {};
     (ST.一覧 || []).forEach(function(y){ いま出ている[String(y.id)] = y; });
   }
+  // ⚠ 2026-09-09（ASTRA再点検・画面7）：中身が変わったものは何であれ先頭へ動かしていた。
+  //   訂正・追記が付いたときは元の記録が本当に上へ上がる（サーバーが並びを付け替える）ので
+  //   それでよいが、**ほかの職員が勤務帯や分類を直しただけ・既読が増えただけ**のときは
+  //   サーバーの並びは変わらない。それでも先頭へ動かすので、画面の並びが
+  //   A→B→C から **B→A→C** に狂い、しかも『新しい申し送りが届きました』と出た。
+  //   → 上へ上げるのは『訂正・追記が増えたとき』だけ。ほかは**その場で書き替える**。
+  var 上がる = {};
+  届いた.forEach(function(x){
+    var 前U = いま出ている[String(x.id)];
+    if(前U && 入れ替える[String(x.id)]
+       && Number(x.子件数 || 0) > Number(前U.子件数 || 0)) 上がる[String(x.id)] = true;
+  });
+  var 箱U = document.getElementById('list');
+  届いた.forEach(function(x){
+    var k = String(x.id);
+    if(!いま出ている[k] || !入れ替える[k] || 上がる[k]) return;
+    var 札U = 箱U && 箱U.querySelector('.card[data-id=' + JSON.stringify(k) + ']');
+    if(!札U) return;
+    札U.outerHTML = cardHtml(x);              // 並びは動かさず、中身だけ新しくする
+    delete 入れ替える[k];
+    ST.一覧 = (ST.一覧 || []).map(function(y){ return String(y.id) === k ? x : y; });
+  });
+  いま出ている = {};
+  (ST.一覧 || []).forEach(function(y){ いま出ている[String(y.id)] = y; });
   var 新しい = 届いた.filter(function(x){
     return !いま出ている[String(x.id)] || 入れ替える[String(x.id)];
   });
-  if(!新しい.length) return;
+  if(!新しい.length) return;   // その場で書き替えただけ＝「届きました」は出さない
 
   // 取ってきた1ページぶんが丸ごと新しい＝その先にも抜けがあるかもしれないので、作り直す
   if(新しい.length >= 届いた.length){
@@ -1695,6 +1719,7 @@ function openAdmin(){ document.getElementById('adminPage').classList.remove('hid
 var 管理の控え_ = {};      // タブ名 → { データ, 時刻 }
 var 管理の世代_ = 0;       // 素早くタブを移ったとき、古い返事で上書きしないための番号
 var 管理のいまのタブ_ = null;
+var 設定を触った_ = false;   // 設定タブの入力に手を付けたか（あとから来た返事で消さないため）
 /** 何かを変えたら、控えは全部捨てる（古い内容が残らないように）*/
 function 管理の控えを捨てる_(){ 管理の控え_ = {}; }
 function 時分_(d){
@@ -1757,6 +1782,7 @@ function setAdm(t){
   // ⚠ 2026-09-08（ASTRAレビュー・申し送り画面10）：CSVタブは 管理で呼ぶ_ を通らないので、
   //   ここで世代を進めておかないと、先に頼んだ返事が CSV の画面を上書きしてしまう。
   管理の世代_++;
+  設定を触った_ = false;   // タブを移ったら「編集中」は解く
   管理のいまのタブ_ = t;
   var box = document.getElementById('admBody');
   // ★控えがあるときは「読み込み中…」を出さない（一瞬の空白を作らないため）
@@ -1860,6 +1886,15 @@ function setAdm(t){
   // ⚠ 2026-09-08（ASTRAレビュー・申し送り画面10）：設定だけ 管理で呼ぶ_ を通っておらず、
   //   取得中に別のタブへ移ると、**そのタブの中身が設定に置き換わり、入力も消えて**いた。
   if(t==='setting') 管理で呼ぶ_(t, '管理_設定一覧', ST.token).then(function(r){
+    // ⚠ 2026-09-09（ASTRA再点検・画面6）：設定を 管理で呼ぶ_ に載せたことで、
+    //   「控えですぐ描く → あとで最新に描き直す」の2回描くようになった。
+    //   その間に人が値を直していると、描き直しで入力欄が全部作り直され、
+    //   **直した内容が黙って元に戻る**（保存を押しても『変えたところがありません』）。
+    //   手を付けたあとは描き直さない。ST.設定元 も動かさない（比べる元がずれるため）。
+    if(設定を触った_){
+      管理の時点を出す_('編集中です（最新の値はまだ取り込んでいません）');
+      return;
+    }
     ST.設定元 = {};
     var s = r.吸い出し || {};
     var 件 = s.件数 || {};
@@ -1914,6 +1949,13 @@ function setAdm(t){
     h += '<button class="btn" onclick="admSaveSettings()">変えたところを保存する</button>'
        + '<div class="note">保存すると、すぐに全員へ効きます。</div>';
     box.innerHTML = h;
+    // ⚠ 同・画面6：入力に手を付けたことを覚えておく（見張りは1回だけ付ける）
+    if(!box.getAttribute('data-設定監視')){
+      box.setAttribute('data-設定監視', '1');
+      var 触った = function(){ if(管理のいまのタブ_ === 'setting') 設定を触った_ = true; };
+      box.addEventListener('input', 触った);
+      box.addEventListener('change', 触った);
+    }
   }).catch(失敗);
 
   if(t==='csv') box.innerHTML =
