@@ -432,7 +432,7 @@
 </div>
 
 <script>
-var 画面の版 = 'd0e739ad876d';
+var 画面の版 = 'de13e6a1a4e0';
 // 申し送りのデータを預かっている場所（Googleのスプレッドシート側）
 var データの置き場 = 'https://moushiokuri-api.kazuya3789.workers.dev/';
 // QRカードから開いたときは、URLの ?k= に合言葉が入っている
@@ -533,12 +533,16 @@ function そっと見に行く(){
   // ★自動:true ＝「人が触ったのではない」とサーバーに伝える。
   //   これを伝えないと、共有端末の無操作ログアウトが永久に来なくなる
   call('一覧取得', ST.token, { tab: ST.tab, 自動: true }).then(function(r){
-    ST.busy = false;
-    // 見に行っているあいだに取り直しが入っていたら、この返事はもう古い（足すと二重になる）
+    // ⚠ 2026-09-09（ASTRA再点検・申し送り画面8）：世代を見る**前に** ST.busy を戻していた。
+    //   古い自動更新の返事が「取りに行ってよい」に戻すので、新しい取り直しの最中に
+    //   もう1本が始まり、**同じページを2回足して同じカードが二重に並ぶ**。
+    //   古い返事は、待ちの札にも触らずに捨てる。
     if(この世代 !== (ST.世代 || 0)) return;
+    ST.busy = false;
     最後に取った時刻 = Date.now();
     届いたぶんを足す(r);
   }).catch(function(e){
+    if(この世代 !== (ST.世代 || 0)) return;   // 同上
     ST.busy = false;
     // ★合言葉が切れていたら、黙って古い一覧を見せ続けない（ログイン画面へ戻す）。
     //   共有端末はしばらく操作がないと自動でログアウトするので、実際に起きる。
@@ -554,7 +558,12 @@ function そっと見に行く(){
  */
 /** カードに出している中身をひとつなぎにする（変わったかどうかを見くらべる用） */
 function カードの見た目_(x){
-  return ['本文','勤務帯','重要度','分類','利用者名','記載者名','投稿日時full','添付数','子件数']
+  // ⚠ 2026-09-09（ASTRA再点検・申し送り画面9）：カードには『✔確認 ◯人』を出しているのに、
+  //   見くらべる相手に 既読数 が入っていなかった。ほかの職員が確認しても、
+  //   一覧を開きっぱなしにしている人には **古い人数のまま**残っていた。
+  //   ★2026-09-09の画面7の直しにより、人数だけ変わったカードは**その場で書き替わる**
+  //     （先頭へ動かないので、並びは狂わないし『届きました』も出ない）。
+  return ['本文','勤務帯','重要度','分類','利用者名','記載者名','投稿日時full','添付数','子件数','既読数']
     .map(function(k){ return String(x[k] == null ? '' : x[k]); })
     .concat([x.自分既読 ? '1' : '0']).join('\u0001');
 }
@@ -791,10 +800,17 @@ window.addEventListener('load', function(){
   if(埋込QRキー || 覚えているtoken){
     show('loginMsg', '読み込んでいます…', 'ok');
   }
+  // ⚠ 2026-09-09（ASTRA再点検・申し送り画面3）：QRカードから開いたということは、
+  //   **その人が入り直す**ということ。それなのに、前に使った職員の控えを
+  //   確かめが終わる前にそのまま出していたので、共有端末で
+  //   **前の職員の申し送りが、次の人に見えたまま**になっていた。
+  //   QRから開いたときは控えを使わず、端末に残っているぶんも消す。
+  //   （ふつうに開き直したときは今までどおり、待たずに前回の内容を出す＝速さは変えない）
+  if(埋込QRキー) 端末の控えを消す_();
   // 前に開いたときの内容が端末に残っていれば、待たずにそのまま出す（すぐ差し替わる）
   var 前回 = null;
   try { 前回 = JSON.parse(記憶.get('ms_maegai') || 'null'); } catch(e){ 前回 = null; }
-  if(覚えているtoken && 前回 && 前回.ログイン && 前回.先読み){
+  if(!埋込QRキー && 覚えているtoken && 前回 && 前回.ログイン && 前回.先読み){
     ST.token = 覚えているtoken;
     前回.ログイン.token = 覚えているtoken;
     afterLogin(前回.ログイン, 前回.先読み);
@@ -816,24 +832,35 @@ window.addEventListener('load', function(){
     // ★つながらなかったときに、端末に残っていた前回の一覧（本文入り）を出したままにしない。
     //   共有端末では、前の人の申し送りが次の人に見えたままになる（2026-08-19のレビューで判明）。
     //   知らせもログイン画面側に出るので、一覧を出したままだと誰も気づけない。
-    端末の控えを消す_();
-    ST.token = null;
-    ST.一覧 = [];
-    ST.detail = null;
-    document.getElementById('list').innerHTML = '';
-    // ⚠ 2026-09-08（ASTRAレビュー・申し送り画面6）：以前は main を隠すだけだったので、
-    //   上に重なっている詳細・検索・投稿の画面に**本文が出たまま**残っていた。
-    //   本文を持つ画面はまとめて閉じて中身も消す。
-    ['detailPage','postPage','searchPage','adminPage','menuPage','resultPage'].forEach(function(id){
-      var el = document.getElementById(id);
-      if(el) el.classList.add('hide');
-    });
-    var db = document.getElementById('detailBody'); if(db) db.innerHTML = '';
-    document.getElementById('main').classList.add('hide');
+    中身をぜんぶ隠す_();
     document.getElementById('loginPage').classList.remove('hide');
     show('loginMsg', '読み込めませんでした：' + ((e && e.message) || '') + '　もう一度開き直してください');
   });
 });
+
+/**
+ * 入れなかった・合言葉が切れていたときに、**本文を持つ画面をまとめて閉じる**。
+ * ⚠ 2026-09-08（画面6）＝つながらなかったときだけこの後片づけをしていた。
+ * ⚠ 2026-09-09（ASTRA再点検・画面3）＝**ふつうの返事で「入れません」と返ったとき**
+ *   （合言葉が切れていた・QRが使えなかった）には何も閉じておらず、
+ *   ログイン画面の上に**前の本文が残る**道があった。同じ後片づけを通す。
+ */
+function 中身をぜんぶ隠す_(){
+  端末の控えを消す_();
+  ST.token = null;
+  ST.一覧 = [];
+  ST.detail = null;
+  ST.detailId = null;
+  var 一覧 = document.getElementById('list'); if(一覧) 一覧.innerHTML = '';
+  ['detailPage','postPage','searchPage','adminPage','menuPage','resultPage'].forEach(function(id){
+    var el = document.getElementById(id);
+    if(el) el.classList.add('hide');
+  });
+  var db = document.getElementById('detailBody'); if(db) db.innerHTML = '';
+  var sb = document.getElementById('searchResult'); if(sb) sb.innerHTML = '';
+  var ab = document.getElementById('askBox'); if(ab) ab.classList.add('hide');
+  document.getElementById('main').classList.add('hide');
+}
 
 function 始める(){
   // ①QRカードから開いた場合＝サーバー側でログインまで済ませてある
@@ -845,7 +872,7 @@ function 始める(){
   }
   // ②QRで入れなかった場合は、理由を出してふつうのログイン画面へ
   if(埋込データ && 埋込データ.入れなかった){
-    端末の控えを消す_();
+    中身をぜんぶ隠す_();          // 画面3（前の本文を残さない）
     showLogin();
     show('loginMsg', 埋込データ.入れなかった);
     return;
@@ -855,8 +882,9 @@ function 始める(){
   ST.token = 記憶.get('ms_token');
   if(ST.token && !(埋込データ && 埋込データ.ログイン)){
     // 合言葉が通らなかった＝端末に残した前回の一覧（本文入り）もここで捨てる（B3）
-    端末の控えを消す_();
-    ST.token = null;
+    // ★2026-09-09（画面3）：詳細や検索の画面が開いたままだと、そこに本文が残る。
+    //   後片づけをまとめた 中身をぜんぶ隠す_() を通す。
+    中身をぜんぶ隠す_();
   }
   showLogin();
 }
@@ -1198,10 +1226,13 @@ function 追記のファイルを選んだ(){
   }).join('<br>');
 }
 /** 追記に付けた写真・動画を送る（本文はもう保存できている） */
-function 追記の添付を送る(申し送りID){
-  if(!追記の選んだファイル.length) return Promise.resolve();
+function 追記の添付を送る(申し送りID, この送信のファイル){
+  // ⚠ 2026-09-09（ASTRA再点検・申し送り画面1）：呼び出し側が「保存を押した時点」で
+  //   固定した一覧を受け取る。省略されたときだけ、今までどおり今の選択を使う。
+  var 元 = この送信のファイル || 追記の選んだファイル;
+  if(!元.length) return Promise.resolve();
   // ★投稿と同じ＝送れたものはその場で控えから外す（送り直しで二重にしない）
-  var 送るもの = 追記の選んだファイル.slice();
+  var 送るもの = 元.slice();
   var 全 = 送るもの.length;
   var 表示 = document.getElementById('addProgress');
   var p = Promise.resolve();
@@ -1210,14 +1241,21 @@ function 追記の添付を送る(申し送りID){
       return 添付を1つ送る(申し送りID, f, function(割合){
         if(表示) 表示.textContent = '写真・動画を送っています（'+(i+1)+'／'+全+'）　'+割合+'%';
       }).then(function(){
-        var k = 追記の選んだファイル.indexOf(f);
-        if(k >= 0) 追記の選んだファイル.splice(k, 1);
+        // 送れたものは、この保存ぶんの控えから外す（送り直しでの二重登録を防ぐ）
+        var k = 元.indexOf(f);
+        if(k >= 0) 元.splice(k, 1);
+        // いま画面で選ばれている一覧にも同じものが居れば、そちらからも外す
+        if(元 !== 追記の選んだファイル){
+          var k2 = 追記の選んだファイル.indexOf(f);
+          if(k2 >= 0) 追記の選んだファイル.splice(k2, 1);
+        }
       });
     });
   });
   return p.then(function(){
     if(表示) 表示.textContent = '';
-    追記の選んだファイル = [];
+    // 画面の選択を空にするのは、いま送ったぶんが画面のものと同じときだけ
+    if(元 === 追記の選んだファイル) 追記の選んだファイル = [];
   }).catch(function(e){
     if(表示) 表示.textContent = '';
     throw new Error('追記は保存できましたが、写真・動画を送れませんでした（'
@@ -1269,6 +1307,7 @@ function doPost(){
   //   次の投稿を書いて写真を選ぶと、**次の投稿の写真が前の投稿へ付いて**いた。
   //   送信ボタンを押した時点の写真を、この送信ぶんとして固定する。
   var この送信のファイル = 選んだファイル.slice();
+  var この受付ID = 受付ID;          // 送信ぶんの目印（画面4）
   call('投稿', ST.token, {
     本文: body,
     利用者ID: document.getElementById('postUser').value,
@@ -1281,6 +1320,11 @@ function doPost(){
     return 添付をまとめて送る(id, この送信のファイル);
   }).then(function(){
     btn.disabled=false; btn.textContent='送信する';
+    // ⚠ 2026-09-09（ASTRA再点検・申し送り画面4）：Aを送信中に「戻る→＋」で次の投稿Bを
+    //   書き始めると、Aの送信が終わったときに **Bの本文・利用者・分類・写真が消えて
+    //   投稿画面まで閉じられて**いた（受付IDは開くたびに新しくなる）。
+    //   いま画面にあるのが、この送信ぶんのときだけ後片づけをする。
+    if(この受付ID !== 受付ID){ reload(); return; }
     document.getElementById('postUser').value='';
     分類を空にする_('postCatBox');
     document.getElementById('postBody').value='';
@@ -1352,6 +1396,10 @@ function openDetail(id, 済ませた文){
  * 一覧に戻る。待たせないよう、いま出ている一覧をそのまま見せて、裏で静かに更新する。
  */
 function closeDetail(){
+  // ⚠ 2026-09-09（ASTRA再点検・申し送り画面5）：「最新を確認しています…」の間に閉じても、
+  //   あとから届いた返事がそのまま進み、**一度も見ていない追記まで確認済み**になっていた。
+  //   閉じたら世代を進めて、待っている返事を捨てる。
+  ++詳細世代;
   closePage('detailPage');
   裏で更新();
 }
@@ -1372,6 +1420,7 @@ function 裏で更新(){
     show('listMsg','');
     知らせを消す();
   }).catch(function(e){
+    if(この世代 !== (ST.世代 || 0)) return;   // 画面8（同上）
     ST.busy = false;
     if(切れた(e)) return;
     show('listMsg','最新の取得に失敗しました（表示は前回のままです）');
@@ -1489,19 +1538,30 @@ function doAdd(){
   var btn = document.getElementById('addBtn');
   btn.disabled = true; btn.textContent = '保存中…';
   追記送信回数++;   // 2回目以降は「送り直し」としてサーバーに伝える（C4）
-  call('追記', ST.token, ST.detailId, addMode, t, 追記受付ID, (追記送信回数 > 1),
+  // ⚠ 2026-09-09（ASTRA再点検・申し送り画面1）：写真は共有の変数（追記の選んだファイル）を
+  //   **本文の返事が返ってから**読んでいた。保存を待っているあいだに戻って別の記録を開き、
+  //   そちらで写真を選ぶと、**前の追記に別の利用者の写真**が付いてしまう。
+  //   （逆に、選び直しで配列が空になって、選んだ写真が送られないまま終わることもある）
+  //   押した時点の「相手・写真・詳細の世代」を、この保存ぶんとして固定する。
+  var この追記の相手 = ST.detailId;
+  var この追記の世代 = 詳細世代;
+  var この追記のファイル = 追記の選んだファイル.slice();
+  call('追記', ST.token, この追記の相手, addMode, t, 追記受付ID, (追記送信回数 > 1),
        { 分類: 選んだ分類_('addCatBox'), 重要度: document.getElementById('addLevel').value })
     .then(function(id){
       btn.textContent = '写真・動画を送信中…';
-      return 追記の添付を送る(id);
+      return 追記の添付を送る(id, この追記のファイル);
     })
     .then(function(){
       btn.disabled = false; btn.textContent = '保存する';
-      openDetail(ST.detailId);
+      // もう別の記録を開いていたら、その画面を勝手に開き直さない（画面1）
+      if(この追記の世代 !== 詳細世代) return;
+      openDetail(この追記の相手);
     })
     .catch(function(e){
       btn.disabled = false; btn.textContent = '保存する';
       if(切れた(e)) return;
+      if(この追記の世代 !== 詳細世代) return;   // 別の記録の画面に知らせを出さない
       show('detailMsg', (e && e.message) || '保存できませんでした');
     });
 }
@@ -2334,7 +2394,14 @@ function 添付をまとめて送る(申し送りID, この送信のファイル
 function 添付を描く(申し送りID){
   var 箱 = document.getElementById('添付欄');
   if(!箱) return;
+  var この相手 = String(申し送りID);
   call('添付一覧', ST.token, 申し送りID).then(function(rows){
+    // ⚠ 2026-09-09（ASTRA再点検・申し送り画面2）：Aの詳細を開いて添付を待つあいだにBへ移ると、
+    //   あとから届いたAの返事が **いま開いているBの写真欄**（同じidの入れ物）を書き替えていた。
+    //   ＝Bの本文の下にAの写真が並び、開くボタンもAを指す。ST.添付 もAに戻る。
+    //   いまも同じ記録を開いていて、入れ物も同じものか、必ず確かめる。
+    if(String(ST.detailId) !== この相手) return;
+    if(document.getElementById('添付欄') !== 箱) return;
     // ★2026-09-01＝訂正・追記にも写真・動画を付けられるようにした。
     //   サーバーは元の記録と訂正・追記のぶんをまとめて返すので、ここで振り分ける
     ST.添付 = rows || [];
@@ -2359,7 +2426,11 @@ function 添付を描く(申し送りID){
     var 並び = document.getElementById('添付並び');
     並び.innerHTML = rows.map(添付1件_).join('');
     rows.forEach(見本を出す_);
-  }).catch(function(e){ if(!切れた(e)) 箱.innerHTML = '<div class="note">'+esc((e&&e.message)||'')+'</div>'; });
+  }).catch(function(e){
+    if(String(ST.detailId) !== この相手) return;                 // 画面2（同上）
+    if(document.getElementById('添付欄') !== 箱) return;
+    if(!切れた(e)) 箱.innerHTML = '<div class="note">'+esc((e&&e.message)||'')+'</div>';
+  });
 }
 /** 写真・動画を1件ぶん描く（元の記録のぶんも、訂正・追記のぶんも同じ形） */
 function 添付1件_(a){
