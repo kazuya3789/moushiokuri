@@ -432,7 +432,7 @@
 </div>
 
 <script>
-var 画面の版 = '77b74d0d7e3e';
+var 画面の版 = '54c57fc7fc4c';
 // 申し送りのデータを預かっている場所（Googleのスプレッドシート側）
 var データの置き場 = 'https://moushiokuri-api.kazuya3789.workers.dev/';
 // QRカードから開いたときは、URLの ?k= に合言葉が入っている
@@ -1329,15 +1329,35 @@ function doPost(){
     分類を空にする_('postCatBox');
     document.getElementById('postBody').value='';
     // 送り終えたので、この画面の写真の選択も空に戻す（次の投稿へ持ち越さない）
-    選んだファイル = [];
-    var _f = document.getElementById('postFiles'); if(_f) _f.value = '';
-    var _fl = document.getElementById('postFileList'); if(_fl) _fl.textContent = '';
+    // ⚠ 2026-09-10（ASTRA3周目・画面中2）：送るぶんは押した時点で固定したのに、
+    //   **写真の選び直しは送信中もできる**。送り終えたあとにここで全部空にすると、
+    //   待っている間に足した写真が**送られないまま消える**（警告も出ない）。
+    //   送ったぶんと同じ選択のときだけ空にする。増えていたら残して知らせる。
+    if(選んだファイル.length !== この送信のファイル.length){
+      try{ alert('送信中に選び直した写真・動画は、まだ送られていません。\n'
+        + 'もう一度「＋」から投稿してお送りください。'); }catch(_e){}
+    } else {
+      選んだファイル = [];
+      var _f = document.getElementById('postFiles'); if(_f) _f.value = '';
+      var _fl = document.getElementById('postFileList'); if(_fl) _fl.textContent = '';
+    }
     closePage('postPage');
     reload();
     window.scrollTo(0,0);
   }).catch(function(e){
     btn.disabled=false; btn.textContent='送信する';
     if(切れた(e)) return;
+    // ⚠ 2026-09-10（ASTRA3周目・画面3）：2026-09-09 の直し（画面4）は
+    //   **成功したときだけ**受付IDを見ていた。失敗のときは見ていないので、
+    //   Aを送信中に「戻る→＋」でBを書き始めてからAが失敗すると、
+    //   Bの画面に『入力内容は残っています。もう一度「送信する」を押しても
+    //   二重登録にはなりません』と出る。残っているのはBであってAではないので、
+    //   案内どおり押すと**Bがもう一度投稿され、Aは未登録のまま**になる。
+    if(この受付ID !== 受付ID){
+      try{ alert('さきほどの投稿は送信できませんでした。\n'
+        + ((e && e.message) || '') + '\nお手数ですが、もう一度書いてください。'); }catch(_e){}
+      return;
+    }
     show('postMsg', ((e && e.message) || '送信できませんでした')
       + '　※入力内容は残っています。もう一度「送信する」を押しても二重登録にはなりません。');
   });
@@ -1546,6 +1566,12 @@ function doAdd(){
   var この追記の相手 = ST.detailId;
   var この追記の世代 = 詳細世代;
   var この追記のファイル = 追記の選んだファイル.slice();
+  // ⚠ 2026-09-10（ASTRA3周目・画面1）：世代は『別の記録へ移ったか』しか見ていない。
+  //   同じ記録のまま「追記する／訂正する」をもう一度押して次を書き始めると世代は変わらず、
+  //   前の追記の完了処理が openDetail() で詳細を作り直し、
+  //   **書きかけの本文・分類・写真の選択が消えて**いた。
+  //   開くたびに新しくなる受付IDも見て、いま書いているものと同じときだけ作り直す。
+  var この追記の受付 = 追記受付ID;
   call('追記', ST.token, この追記の相手, addMode, t, 追記受付ID, (追記送信回数 > 1),
        { 分類: 選んだ分類_('addCatBox'), 重要度: document.getElementById('addLevel').value })
     .then(function(id){
@@ -1556,12 +1582,23 @@ function doAdd(){
       btn.disabled = false; btn.textContent = '保存する';
       // もう別の記録を開いていたら、その画面を勝手に開き直さない（画面1）
       if(この追記の世代 !== 詳細世代) return;
+      // 同じ記録のまま次を書き始めていたら、書きかけを消さない（3周目・画面1）
+      if(この追記の受付 !== 追記受付ID) return;
       openDetail(この追記の相手);
     })
     .catch(function(e){
       btn.disabled = false; btn.textContent = '保存する';
       if(切れた(e)) return;
-      if(この追記の世代 !== 詳細世代) return;   // 別の記録の画面に知らせを出さない
+      // ⚠ 2026-09-10（ASTRA3周目・画面2）：2026-09-09 に足した世代の判定が、
+      //   **必要な失敗の知らせまで捨てて**いた。追記を送ってから「戻る」で別の記録を
+      //   開くと、その追記が保存できていないことが**どこにも出ない**
+      //   （入力欄も消えているので、書き直すこともできない）。
+      //   別の記録の画面に赤字を出すのは避けたまま、失敗そのものは必ず知らせる。
+      if(この追記の世代 !== 詳細世代 || この追記の受付 !== 追記受付ID){
+        try{ alert('さきほどの' + (addMode==='訂正'?'訂正':'追記') + 'は保存できませんでした。\n'
+          + ((e && e.message) || '') + '\nお手数ですが、もう一度書いてください。'); }catch(_e){}
+        return;
+      }
       show('detailMsg', (e && e.message) || '保存できませんでした');
     });
 }
