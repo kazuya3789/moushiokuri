@@ -432,7 +432,7 @@
 </div>
 
 <script>
-var 画面の版 = '04850de51ab4';
+var 画面の版 = 'f5c4e1e18b42';
 // 申し送りのデータを預かっている場所（Googleのスプレッドシート側）
 var データの置き場 = 'https://moushiokuri-api.kazuya3789.workers.dev/';
 // QRカードから開いたときは、URLの ?k= に合言葉が入っている
@@ -961,17 +961,29 @@ function afterLogin(r, 先読み){
   document.getElementById('menuRole').textContent = r.職員.権限;
   document.getElementById('menuIcon').textContent = String(r.職員.氏名 || '？').trim().charAt(0);
   document.getElementById('adminBtn').classList.toggle('hide', r.職員.権限 !== '管理者');
+  var 選び中の分類_ = 選んだ分類_('postCatBox');   // 書きかけの選択を覚える（画面中3）
   分類の枠を作る_('postCatBox', r.設定.分類);
+  分類を選び直す_('postCatBox', 選び中の分類_);
   document.getElementById('sCat').innerHTML = '<option value="">（すべて）</option>' +
     r.設定.分類.map(function(c){ return '<option>'+esc(c)+'</option>'; }).join('');
   window.利用者を並べる = 利用者を並べる;   // ★投稿画面の取り直しから呼ぶ
   function 利用者を並べる(us){
     ST.users = us || [];
+    // 書きかけの選択を覚えておき、作り直したあとに戻す（画面中3）
+    var 選び中の利用者_ = (document.getElementById('postUser') || {}).value || '';
     document.getElementById('postUser').innerHTML = '<option value="">（指定しない）</option>' +
       ST.users.filter(function(u){return u.在籍==='在籍';})
         .map(function(u){ return '<option value="'+esc(u.id)+'">'+esc(u.氏名)+(u.部屋?'（'+esc(u.部屋)+'）':'')+'</option>'; }).join('');
     document.getElementById('sTarget').innerHTML = '<option value="">（すべて）</option>' +
       ST.users.map(function(u){ return '<option value="'+esc(u.id)+'">'+esc(u.氏名)+'</option>'; }).join('');
+    if(選び中の利用者_){
+      var 欄 = document.getElementById('postUser');
+      // その人がまだ一覧にいるときだけ戻す（退居した人を選んだままにしない）
+      var ある = Array.prototype.slice.call(欄.options).some(function(o){
+        return o.value === 選び中の利用者_;
+      });
+      if(ある) 欄.value = 選び中の利用者_;
+    }
   }
   function 職員を並べる(list){
     ST.staff = list || [];
@@ -1210,6 +1222,19 @@ function 選んだ分類_(枠ID){
   return Array.prototype.slice.call(枠.querySelectorAll('input:checked'))
     .map(function(x){ return x.value; });
 }
+/** さっき選ばれていた分類に、チェックを付け直す（画面中3）
+ *  ⚠ 2026-09-13（ASTRA4周目・画面中3）：控えで一覧を先に出している間に「＋」を押して
+ *    利用者と分類を選び本文を書いていると、あとから届いた `初期表示` の返事で
+ *    `afterLogin()` が走り、分類の枠と利用者の一覧を**作り直す**。
+ *    本文だけ残って**利用者は「指定しない」・分類は未選択に戻る**ので、
+ *    気づかず送ると、利用者も分類も付かない記録になる。作り直す前の選択を戻す。 */
+function 分類を選び直す_(枠ID, 選び){
+  var 枠 = document.getElementById(枠ID);
+  if(!枠 || !選び || !選び.length) return;
+  Array.prototype.slice.call(枠.querySelectorAll('input')).forEach(function(x){
+    if(選び.indexOf(x.value) >= 0){ x.checked = true; 分類を押した_(x); }
+  });
+}
 /** 分類のチェックを全部外す */
 function 分類を空にする_(枠ID){
   var 枠 = document.getElementById(枠ID);
@@ -1303,10 +1328,19 @@ function 追記を消す(id){
     + String(c.投稿日時full || '') + '　' + String(c.記載者名 || '') + 改 + 改
     + 見出しに縮める_(c.本文)
     + (添付 ? 改 + 改 + '一緒に消えるもの：写真・動画 ' + 添付 + '件' : '');
+  // ⚠ 2026-09-13（ASTRA4周目・画面中2）：勤務帯と同じで、消し終わった時点の
+  //   `ST.detailId` を開き直していた。消している間に別の記録へ移って追記を書いていると、
+  //   **その書きかけが消える**。押した時点の相手と世代を覚えておく。
+  var この相手 = ST.detailId;
+  var この世代 = 詳細世代;
   たずねる_('この' + c.種別 + 'を削除します', 文, '削除する').then(function(はい){
     if(!はい) return;
     call('削除', ST.token, id)
-      .then(function(){ openDetail(ST.detailId, 'この' + c.種別 + 'を削除しました'); })
+      .then(function(){
+        // 同じ守り（画面中2）。消している間に別の記録へ移っていたら、そちらを開き直さない
+        if(この世代 !== 詳細世代) return;
+        openDetail(この相手, 'この' + c.種別 + 'を削除しました');
+      })
       .catch(function(e){ if(!切れた(e)) show('detailMsg', (e && e.message)); });
   });
 }
@@ -1375,8 +1409,8 @@ function doPost(){
     //   待っている間に足した写真が**送られないまま消える**（警告も出ない）。
     //   送ったぶんと同じ選択のときだけ空にする。増えていたら残して知らせる。
     if(選んだファイル.length !== この送信のファイル.length){
-      try{ alert('送信中に選び直した写真・動画は、まだ送られていません。\n'
-        + 'もう一度「＋」から投稿してお送りください。'); }catch(_e){}
+      どうしても知らせる_('送信中に選び直した写真・動画は、まだ送られていません',
+        'もう一度「＋」から投稿してお送りください。');
     } else {
       選んだファイル = [];
       var _f = document.getElementById('postFiles'); if(_f) _f.value = '';
@@ -1395,8 +1429,8 @@ function doPost(){
     //   二重登録にはなりません』と出る。残っているのはBであってAではないので、
     //   案内どおり押すと**Bがもう一度投稿され、Aは未登録のまま**になる。
     if(この受付ID !== 受付ID){
-      try{ alert('さきほどの投稿は送信できませんでした。\n'
-        + ((e && e.message) || '') + '\nお手数ですが、もう一度書いてください。'); }catch(_e){}
+      どうしても知らせる_('さきほどの投稿は送信できませんでした',
+        ((e && e.message) || '') + '\nお手数ですが、もう一度書いてください。');
       return;
     }
     show('postMsg', ((e && e.message) || '送信できませんでした')
@@ -1570,10 +1604,22 @@ function renderDetail(r){
 /** 送ったあとに勤務帯だけを直す（本文は触らない） */
 function doShiftFix(){
   var v = document.getElementById('shiftFix').value;
-  call('勤務帯を直す', ST.token, ST.detailId, v).then(function(r){
-    openDetail(ST.detailId, (r && r.変えなかった) ? 'もともと「'+v+'」でした'
-                                                : '勤務帯を「'+v+'」に直しました');
-  }).catch(function(e){ if(!切れた(e)) show('detailMsg', (e && e.message)); });
+  // ⚠ 2026-09-13（ASTRA4周目・画面中2）：`doAdd()` には入れた世代の守りが、こちらに無かった。
+  //   記録Aの勤務帯を直して返事を待たずに戻り、記録Bを開いて追記を書いていると、
+  //   Aの返事が届いた時点の `ST.detailId`（＝B）を開き直す。
+  //   **Bの書きかけの本文・分類・写真の選択が消え、Bに『勤務帯を直しました』と出る。**
+  //   押した時点の相手と世代を覚えておき、同じときだけ開き直す。
+  var この相手 = ST.detailId;
+  var この世代 = 詳細世代;
+  call('勤務帯を直す', ST.token, この相手, v).then(function(r){
+    if(この世代 !== 詳細世代) return;   // もう別の記録を開いている
+    openDetail(この相手, (r && r.変えなかった) ? 'もともと「'+v+'」でした'
+                                            : '勤務帯を「'+v+'」に直しました');
+  }).catch(function(e){
+    if(切れた(e)) return;
+    if(この世代 !== 詳細世代) return;   // 別の記録の画面に赤字を出さない
+    show('detailMsg', (e && e.message));
+  });
 }
 var addMode = '追記', 追記受付ID = null, 追記送信回数 = 0;
 function openAddBox(mode){
@@ -1621,6 +1667,16 @@ function doAdd(){
     })
     .then(function(){
       btn.disabled = false; btn.textContent = '保存する';
+      // ⚠ 2026-09-13（ASTRA4周目・画面中1）：2026-09-10 に**投稿側**へ入れた
+      //   「送信中に選び直した写真を、送らずに消さない」が、追記側に無かった。
+      //   写真Pで追記を保存し、待っているあいだに同じ欄で写真Qを選び直すと、
+      //   送るのは押した時点のPだけ。そのあと詳細を作り直すので
+      //   **Qは一度も送られないまま選択ごと消える**（知らせも出ない）。
+      //   送ったぶんと今の選択が違うなら、作り直す前に必ず知らせる。
+      if(追記の選んだファイル.length !== この追記のファイル.length){
+        どうしても知らせる_('送信中に選び直した写真・動画は、まだ送られていません',
+          'もう一度「' + (addMode==='訂正'?'訂正':'追記') + 'する」からお送りください。');
+      }
       // もう別の記録を開いていたら、その画面を勝手に開き直さない（画面1）
       if(この追記の世代 !== 詳細世代) return;
       // 同じ記録のまま次を書き始めていたら、書きかけを消さない（3周目・画面1）
@@ -1636,8 +1692,8 @@ function doAdd(){
       //   （入力欄も消えているので、書き直すこともできない）。
       //   別の記録の画面に赤字を出すのは避けたまま、失敗そのものは必ず知らせる。
       if(この追記の世代 !== 詳細世代 || この追記の受付 !== 追記受付ID){
-        try{ alert('さきほどの' + (addMode==='訂正'?'訂正':'追記') + 'は保存できませんでした。\n'
-          + ((e && e.message) || '') + '\nお手数ですが、もう一度書いてください。'); }catch(_e){}
+        どうしても知らせる_('さきほどの' + (addMode==='訂正'?'訂正':'追記') + 'は保存できませんでした',
+          ((e && e.message) || '') + '\nお手数ですが、もう一度書いてください。');
         return;
       }
       show('detailMsg', (e && e.message) || '保存できませんでした');
@@ -1726,6 +1782,17 @@ function たずねる_(題, 文, OKの文字){
 /** お知らせ（alertのかわり）。閉じるボタンだけ出す */
 function しらせる_(題, 文){
   return 窓を開く_(題, 文, [], '閉じる', true);
+}
+/** どうしても伝えたいことを知らせる（画面の窓 → alert → 画面の赤字の順に試す）
+ *  ⚠ 2026-09-13（ASTRA4周目・画面中5）：2026-09-10 に足した
+ *    『さきほどの投稿／追記は送れませんでした』の知らせが **alert だけ** だった。
+ *    端末で alert が抑えられていたり例外になると、入力はもう消えているのに
+ *    **記録できなかったこと自体が職員に届かない**（画面内の知らせへ切り替える道もなかった）。
+ *    この画面が自分で持っている窓を先に使い、それも無理なときだけ alert に頼る。 */
+function どうしても知らせる_(題, 文){
+  try{ しらせる_(題, 文); return; }catch(_e){}
+  try{ alert(題 + '\n' + 文); return; }catch(_e){}
+  try{ show('listMsg', 題 + '　' + 文); }catch(_e){}
 }
 // ボタンと、背景タップ・Escで閉じる仕掛けを付ける（この script は入れ物より後ろにある）
 (function(){
@@ -1926,7 +1993,21 @@ function setAdm(t){
   // ★控えがあるときは「読み込み中…」を出さない（一瞬の空白を作らないため）
   if(!管理の控え_[t]) box.innerHTML = '<div class="loading">読み込み中…</div>';
   show('admMsg','');
-  var 失敗 = function(e){ if(!切れた(e)){ box.innerHTML=''; show('admMsg', (e && e.message)); } };
+  var 失敗 = function(e){
+    if(切れた(e)) return;
+    // ⚠ 2026-09-13（ASTRA4周目・画面中4）：2026-09-09 に入れた「編集中は上書きしない」は
+    //   **うまくいったときだけ**だった。控えから出した設定を直している途中で
+    //   裏の取り直しが通信エラーになると、ここが `box.innerHTML=''` で
+    //   **入力中の設定をまるごと消して**しまう（打ち直しになる）。
+    //   編集中は中身をそのまま残し、うまくいかなかったことだけを知らせる。
+    if(管理のいまのタブ_ === 'setting' && 設定を触った_){
+      show('admMsg', ((e && e.message) || '最新を取り直せませんでした')
+        + '　※編集中の入力はそのまま残しています');
+      return;
+    }
+    box.innerHTML='';
+    show('admMsg', (e && e.message));
+  };
 
   if(t==='staff') 管理で呼ぶ_(t, '管理_職員一覧', ST.token).then(function(rows){
     // 在職の人だけを普通に並べ、退職・異動はたたんで隠す（2026-08-20）
