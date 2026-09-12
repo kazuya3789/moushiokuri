@@ -432,7 +432,7 @@
 </div>
 
 <script>
-var 画面の版 = '54c57fc7fc4c';
+var 画面の版 = '04850de51ab4';
 // 申し送りのデータを預かっている場所（Googleのスプレッドシート側）
 var データの置き場 = 'https://moushiokuri-api.kazuya3789.workers.dev/';
 // QRカードから開いたときは、URLの ?k= に合言葉が入っている
@@ -490,6 +490,8 @@ function 切れた(e){
   var m = (e && e.message) || '';
   if(/ログインしてください|有効期限|操作がなかった|利用停止/.test(m)){
     端末の控えを消す_();
+    // 重大1（2026-09-13）：QRの鍵が残っていると、読み直しで同じ職員に戻る
+    if(typeof QRキーをURLから外す_ === 'function') QRキーをURLから外す_();
     location.reload();
     return true;
   }
@@ -807,10 +809,28 @@ window.addEventListener('load', function(){
   //   QRから開いたときは控えを使わず、端末に残っているぶんも消す。
   //   （ふつうに開き直したときは今までどおり、待たずに前回の内容を出す＝速さは変えない）
   if(埋込QRキー) 端末の控えを消す_();
+  // ⚠ 2026-09-13（ASTRA4周目・申し送り画面 重大2）：09-09 の直しは
+  //   **QRで開いたときだけ**だった。共有端末でふつうのURLから開くと、
+  //   前の職員のセッションが切れていても、サーバーが確かめる**前に**
+  //   前の職員の氏名・申し送り本文・確認状態が出てしまう（通信が遅いとその間ずっと）。
+  //   あとから隠しても、もう見えている。
+  //   → 控えに『誰の・いつの・どの合言葉のものか』を書いておき、
+  //     合っていて、かつ古すぎないときだけ出す。
+  function 前回の控えを出してよいか_(前回, いまのtoken){
+    var 出してよい間 = 12 * 60 * 60 * 1000;   // 12時間より古い控えは出さない
+    try{
+      if(!前回 || !前回.印) return false;              // 印の無い古い控えは出さない
+      if(String(前回.印.token || '') !== String(いまのtoken || '')) return false;
+      var 経過 = Date.now() - Number(前回.印.とき || 0);
+      if(!(経過 >= 0 && 経過 < 出してよい間)) return false;
+      return true;
+    }catch(e){ return false; }
+  }
   // 前に開いたときの内容が端末に残っていれば、待たずにそのまま出す（すぐ差し替わる）
   var 前回 = null;
   try { 前回 = JSON.parse(記憶.get('ms_maegai') || 'null'); } catch(e){ 前回 = null; }
-  if(!埋込QRキー && 覚えているtoken && 前回 && 前回.ログイン && 前回.先読み){
+  if(!埋込QRキー && 覚えているtoken && 前回 && 前回.ログイン && 前回.先読み
+     && 前回の控えを出してよいか_(前回, 覚えているtoken)){
     ST.token = 覚えているtoken;
     前回.ログイン.token = 覚えているtoken;
     afterLogin(前回.ログイン, 前回.先読み);
@@ -822,7 +842,9 @@ window.addEventListener('load', function(){
     // 次に開いたときのために控えておく（合言葉やPINは入っていない）
     try {
       if(d && d.ログイン && d.先読み){
-        記憶.set('ms_maegai', JSON.stringify({ ログイン: { 職員: d.ログイン.職員, 設定: d.ログイン.設定 }, 先読み: d.先読み }));
+        // ★2026-09-13（画面 重大2）：控えに『誰の・いつの』の印を一緒に入れる。
+        //   これが無いと、次に開いた人に前の職員の本文をそのまま見せてしまう。
+        記憶.set('ms_maegai', JSON.stringify({ ログイン: { 職員: d.ログイン.職員, 設定: d.ログイン.設定 }, 先読み: d.先読み, 印: { token: ST.token, とき: Date.now() } }));
       }
     } catch(e){}
     ST.cursor = null;
@@ -1074,12 +1096,13 @@ window.addEventListener('scroll', function(){
 });
 
 // ===== 投稿 =====
-var 受付ID = null, 送信回数 = 0;
+var 受付ID = null, 送信回数 = 0, 最初に送った中身 = null;
 function openPost(){
   // 前に書いた人の選択が残ったままにならないよう、毎回「自動」に戻す
   document.getElementById('postShift').value = '';
   勤務帯の案内();
   送信回数 = 0;   // 送り直しかどうかを数える（C4）
+  最初に送った中身 = null;   // 重大3（2026-09-13）：送り直しの中身を見くらべる用
   document.getElementById('postBody').value='';
   document.getElementById('postCount').textContent='';
   show('postMsg','');
@@ -1308,6 +1331,24 @@ function doPost(){
   //   送信ボタンを押した時点の写真を、この送信ぶんとして固定する。
   var この送信のファイル = 選んだファイル.slice();
   var この受付ID = 受付ID;          // 送信ぶんの目印（画面4）
+  // ⚠ 2026-09-13（ASTRA4周目・申し送り画面 重大3）：写真だけ失敗したあと、
+  //   入力欄はそのまま直せるので、職員が**利用者や本文を別のものに変えて**送り直せる。
+  //   ところが受付IDは投稿画面を開いたときのままなので、サーバーは
+  //   「同じ送信の送り直し」とみなして**最初の投稿に写真だけを足す**
+  //   ＝Aさんの記録にBさんの写真が付き、直した本文・利用者は保存されない。
+  //   → 送り直しのときは、最初に送った中身と同じかを見る。違えば**別の送信**として
+  //     新しい受付IDにする（＝ちゃんと新しい記録になる）。
+  var この送信の中身 = JSON.stringify([body,
+    document.getElementById('postUser').value,
+    選んだ分類_('postCatBox'),
+    document.getElementById('postLevel').value,
+    document.getElementById('postShift').value]);
+  if(送信回数 > 1 && 最初に送った中身 !== null && 最初に送った中身 !== この送信の中身){
+    受付ID = 'R-' + Date.now() + '-' + Math.random().toString(36).slice(2, 8);
+    この受付ID = 受付ID;
+    送信回数 = 1;                 // 中身が変わった＝新しい送信の1回目
+  }
+  最初に送った中身 = この送信の中身;
   call('投稿', ST.token, {
     本文: body,
     利用者ID: document.getElementById('postUser').value,
