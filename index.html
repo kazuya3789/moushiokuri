@@ -88,6 +88,15 @@
      戻すときは cardHtml と詳細の chips に足し直す */
   /* ★赤はやめた（本人の判断）。落ち着いた琥珀色で「重要」だけ知らせる */
   .chip.high{background:#fdf2df; color:#96660f; font-weight:700;}
+  /* ★管理者だけに見せる記録の印（2026-10-04）。琥珀（重要）・灰（訂正）と間違えない紫系 */
+  .chip.adminonly{background:#ece4f5; color:#5b3a86; font-weight:700;}
+  /* 投稿画面のチェック欄。★管理者のときだけ出す */
+  .adminonly-box{background:#f7f2fc; border:1px solid #ddd0ec; border-radius:10px;
+    padding:11px 12px; margin:10px 0 4px;}
+  .adminonly-box label.ck{display:flex; align-items:center; gap:9px;
+    font-size:15px; color:#4a2d70; font-weight:700; margin:0;}
+  .adminonly-box label.ck input{width:auto; margin:0; accent-color:#6b3fa0;
+    width:20px; height:20px; flex:none;}
   .chip.fix{background:#f1ece5; color:#7a6448;}
   /* ★新着の赤い印（2026-09-01）。勤務帯のとなりに、少し大きめ・太字で出す */
   .newmark{color:#d93025; font-weight:800; font-size:15px; flex:none;}
@@ -306,6 +315,13 @@
     <input id="postFiles" type="file" accept="image/*,video/*" multiple onchange="ファイルを選んだ()">
     <div id="postFileList" class="note"></div>
     <div id="postProgress" class="note"></div>
+    <!-- ★管理者だけに見せる記録（2026-10-04）。管理者のときだけ出す -->
+    <div id="postAdminOnlyBox" class="adminonly-box hide">
+      <label class="ck"><input id="postAdminOnly" type="checkbox">
+        <span>この申し送りは管理者だけに見せる</span></label>
+      <div class="note">一般職員の一覧・検索・写真動画には出ません。
+        管理者の画面には「管理者限定」の印つきで出ます。CSV出力には出ます。</div>
+    </div>
     <button class="btn" id="postBtn" onclick="doPost()">送信する</button>
   </div>
 </div>
@@ -432,7 +448,7 @@
 </div>
 
 <script>
-var 画面の版 = 'f5c4e1e18b42';
+var 画面の版 = 'f254bb3956bb';
 // 申し送りのデータを預かっている場所（Googleのスプレッドシート側）
 var データの置き場 = 'https://moushiokuri-api.kazuya3789.workers.dev/';
 // QRカードから開いたときは、URLの ?k= に合言葉が入っている
@@ -565,7 +581,8 @@ function カードの見た目_(x){
   //   一覧を開きっぱなしにしている人には **古い人数のまま**残っていた。
   //   ★2026-09-09の画面7の直しにより、人数だけ変わったカードは**その場で書き替わる**
   //     （先頭へ動かないので、並びは狂わないし『届きました』も出ない）。
-  return ['本文','勤務帯','重要度','分類','利用者名','記載者名','投稿日時full','添付数','子件数','既読数']
+  // ★『管理者限定』を入れておくと、切り替えたときにカードの印がその場で書き替わる（2026-10-04）
+  return ['本文','勤務帯','重要度','分類','利用者名','記載者名','投稿日時full','添付数','子件数','既読数','管理者限定']
     .map(function(k){ return String(x[k] == null ? '' : x[k]); })
     .concat([x.自分既読 ? '1' : '0']).join('\u0001');
 }
@@ -961,6 +978,10 @@ function afterLogin(r, 先読み){
   document.getElementById('menuRole').textContent = r.職員.権限;
   document.getElementById('menuIcon').textContent = String(r.職員.氏名 || '？').trim().charAt(0);
   document.getElementById('adminBtn').classList.toggle('hide', r.職員.権限 !== '管理者');
+  // ★管理者だけに見せる記録のチェック欄（2026-10-04）。管理者のときだけ出す。
+  //   ★画面だけに頼らない＝サーバーも、管理者以外が送ってきた「管理者限定」は受け付けない
+  var _限定箱 = document.getElementById('postAdminOnlyBox');
+  if(_限定箱) _限定箱.classList.toggle('hide', r.職員.権限 !== '管理者');
   var 選び中の分類_ = 選んだ分類_('postCatBox');   // 書きかけの選択を覚える（画面中3）
   分類の枠を作る_('postCatBox', r.設定.分類);
   分類を選び直す_('postCatBox', 選び中の分類_);
@@ -1077,6 +1098,9 @@ function cardHtml(d){
   if(d.利用者名) chips += '<span class="chip user">'+esc(d.利用者名)+'</span>';
   chips += 分類のしるし_(d.分類);
   if(d.重要度==='高') chips += '<span class="chip high">重要</span>';
+  // ★管理者だけに見せる記録（2026-10-04）。ここに出るのは管理者の画面だけ
+  //   （一般職員にはサーバーが一覧から外している）
+  if(d.管理者限定) chips += '<span class="chip adminonly">管理者限定</span>';
   if(d.訂正一致) chips += '<span class="chip fix">訂正・追記が一致</span>';
   if(d.添付数) chips += '<span class="chip">📎写真・動画'+d.添付数+'</span>';
   var body = String(d.本文||'');
@@ -1215,6 +1239,17 @@ function 分類の枠を作る_(枠ID, 候補){
 function 分類を押した_(入){
   if(入 && 入.parentNode) 入.parentNode.className = 入.checked ? 'on' : '';
 }
+/**
+ * 投稿画面の「管理者だけに見せる」が選ばれているか（2026-10-04）。
+ * ★箱が隠れているとき（＝管理者ではない）は、チェックが残っていても必ず false。
+ */
+function 管理者限定を選んだか_(){
+  var 箱 = document.getElementById('postAdminOnlyBox');
+  var ck = document.getElementById('postAdminOnly');
+  if(!箱 || !ck || 箱.classList.contains('hide')) return false;
+  return !!ck.checked;
+}
+
 /** 選ばれている分類を配列で返す（サーバーは配列でもカンマ区切りでも受け取る） */
 function 選んだ分類_(枠ID){
   var 枠 = document.getElementById(枠ID);
@@ -1376,7 +1411,10 @@ function doPost(){
     document.getElementById('postUser').value,
     選んだ分類_('postCatBox'),
     document.getElementById('postLevel').value,
-    document.getElementById('postShift').value]);
+    document.getElementById('postShift').value,
+    // ★ここを入れ忘れると、チェックだけ付け直して送り直したときに
+    //   「同じ送信の送り直し」とみなされ、**印が付かないまま**最初の記録が残る
+    管理者限定を選んだか_()]);
   if(送信回数 > 1 && 最初に送った中身 !== null && 最初に送った中身 !== この送信の中身){
     受付ID = 'R-' + Date.now() + '-' + Math.random().toString(36).slice(2, 8);
     この受付ID = 受付ID;
@@ -1389,6 +1427,7 @@ function doPost(){
     分類: 選んだ分類_('postCatBox'),
     重要度: document.getElementById('postLevel').value,
     勤務帯: document.getElementById('postShift').value,
+    管理者限定: 管理者限定を選んだか_(),   // ★2026-10-04
     送り直し: (送信回数 > 1)
   }, 受付ID).then(function(id){
     btn.textContent='写真・動画を送信中…';
@@ -1403,6 +1442,9 @@ function doPost(){
     document.getElementById('postUser').value='';
     分類を空にする_('postCatBox');
     document.getElementById('postBody').value='';
+    // ★チェックは毎回外す（2026-10-04）。付けっぱなしだと、次に書いた
+    //   **みんなに読ませたい申し送りが、誰にも見えないまま**になってしまう
+    var _ck = document.getElementById('postAdminOnly'); if(_ck) _ck.checked = false;
     // 送り終えたので、この画面の写真の選択も空に戻す（次の投稿へ持ち越さない）
     // ⚠ 2026-09-10（ASTRA3周目・画面中2）：送るぶんは押した時点で固定したのに、
     //   **写真の選び直しは送信中もできる**。送り終えたあとにここで全部空にすると、
@@ -1530,6 +1572,7 @@ function renderDetail(r){
   if(d.利用者名) chips += '<span class="chip user">'+esc(d.利用者名)+'</span>';
   chips += 分類のしるし_(d.分類);
   if(d.重要度==='高') chips += '<span class="chip high">重要</span>';
+  if(d.管理者限定) chips += '<span class="chip adminonly">管理者限定</span>';   // ★2026-10-04
   if(chips) h += '<div class="chips">'+chips+'</div>';
   if(r.修正回数) h += '<div class="note">※この記録は投稿直後に'+r.修正回数+'回修正されています（変更前の全文は版履歴に保存）</div>';
   h += '</div>';
@@ -1579,6 +1622,19 @@ function renderDetail(r){
        + '<option' + (d.勤務帯==='日勤'?' selected':'') + '>日勤</option>'
        + '<option' + (d.勤務帯==='夜勤'?' selected':'') + '>夜勤</option></select>'
        + '<button class="btn gray" style="margin-top:8px;" onclick="doShiftFix()">この勤務帯に直す</button></div>';
+  }
+  // ★管理者だけに見せる記録の切り替え（2026-10-04）。
+  //   『非表示にする』とは別物＝あちらは管理者にも一覧から消える（非表示一覧だけ）。
+  //   こちらは管理者にはふつうに見えたまま、一般職員の画面から消える
+  if(r.管理者){
+    h += '<div class="list-item" style="margin-top:10px;"><b>この記録を見られる人</b>'
+       + '<div class="note" style="margin:4px 0;">いまは「'
+       + (d.管理者限定 ? '管理者だけ' : '全員（一般職員も見られます）')
+       + '」です。どちらでも、CSV出力には出ます。</div>'
+       + '<button class="btn gray" onclick="管理者限定を切り替える('
+       + (d.管理者限定 ? 'false' : 'true') + ')">'
+       + (d.管理者限定 ? '全員が見られるようにする' : '管理者だけに見せる')
+       + '</button></div>';
   }
   if(r.管理者)
     h += '<button class="btn danger" onclick="doHide()">非表示にする（管理者）</button>';
@@ -1856,6 +1912,35 @@ function 見出しに縮める_(s){
   var t = String(s == null ? '' : s).split(/[ \t\r\n\u3000]+/).join(' ');
   return t.length > 120 ? t.slice(0, 120) + '…' : t;
 }
+/**
+ * 管理者が「この記録を管理者だけに見せる／やめる」を切り替える（2026-10-04）。
+ * ★doShiftFix と同じ守り＝押した時点の相手と世代を覚えておき、
+ *   返事が届いたときに別の記録を開いていたら何もしない
+ *   （別の記録の画面に『切り替えました』や赤字を出さない）。
+ */
+function 管理者限定を切り替える(限定にする){
+  var する = (限定にする === true || 限定にする === 'true');
+  var この相手 = ST.detailId;
+  var この世代 = 詳細世代;
+  たずねる_(する ? '管理者だけに見せますか' : '全員が見られるようにしますか',
+    する ? 'この申し送りは、一般職員の一覧・検索・写真動画に出なくなります。'
+         + '記録は消えません（CSV出力には出ます）。'
+         : 'この申し送りは、一般職員の一覧にも出るようになります。',
+    する ? '管理者だけに見せる' : '全員が見られるようにする').then(function(はい){
+    if(!はい) return;
+    call('管理_管理者限定', ST.token, この相手, する).then(function(r){
+      if(この世代 !== 詳細世代) return;   // もう別の記録を開いている
+      openDetail(この相手, (r && r.変えなかった)
+        ? 'もともとそうなっていました'
+        : (する ? '管理者だけに見せるようにしました' : '全員が見られるようにしました'));
+    }).catch(function(e){
+      if(切れた(e)) return;
+      if(この世代 !== 詳細世代) return;
+      show('detailMsg', (e && e.message));
+    });
+  });
+}
+
 function doHide(){
   var 対象ID = ST.detailId;   // 窓を開く前に対象を固定する（doDelete と同じ理由）
   窓を開く_('この申し送りを非表示にする', '記録は消えません。あとから「非表示一覧」から戻せます。',
