@@ -418,14 +418,14 @@
   <div class="inner">
     <div class="pagehead"><h1>管理画面</h1><p>職員・利用者・システム設定を管理します</p></div>
     <div class="adm-tabs">
-      <button data-adm="staff" class="on" onclick="setAdm('staff')">職員</button>
-      <button data-adm="user" onclick="setAdm('user')">利用者</button>
-      <button data-adm="qr" onclick="setAdm('qr')">QRカード</button>
-      <button data-adm="hidden" onclick="setAdm('hidden')">非表示一覧</button>
-      <button data-adm="log" onclick="setAdm('log')">監査ログ</button>
-      <button data-adm="err" onclick="setAdm('err')">エラー</button>
-      <button data-adm="csv" onclick="setAdm('csv')">CSV出力</button>
-      <button data-adm="setting" onclick="setAdm('setting')">設定</button>
+      <button data-adm="staff" class="on" onclick="管理タブを押した_('staff')">職員</button>
+      <button data-adm="user" onclick="管理タブを押した_('user')">利用者</button>
+      <button data-adm="qr" onclick="管理タブを押した_('qr')">QRカード</button>
+      <button data-adm="hidden" onclick="管理タブを押した_('hidden')">非表示一覧</button>
+      <button data-adm="log" onclick="管理タブを押した_('log')">監査ログ</button>
+      <button data-adm="err" onclick="管理タブを押した_('err')">エラー</button>
+      <button data-adm="csv" onclick="管理タブを押した_('csv')">CSV出力</button>
+      <button data-adm="setting" onclick="管理タブを押した_('setting')">設定</button>
     </div>
     <div id="admMsg" class="msg"></div>
     <div id="admBody"></div>
@@ -448,7 +448,7 @@
 </div>
 
 <script>
-var 画面の版 = 'f254bb3956bb';
+var 画面の版 = '7d1748cb7c45';
 // 申し送りのデータを預かっている場所（Googleのスプレッドシート側）
 var データの置き場 = 'https://moushiokuri-api.kazuya3789.workers.dev/';
 // QRカードから開いたときは、URLの ?k= に合言葉が入っている
@@ -877,6 +877,47 @@ window.addEventListener('load', function(){
   });
 });
 
+// 戻る・窓の外で閉じる（共通 2026-11-02）
+var Modoru = (function () {
+  var stack = [], skip = 0, pend = 0, timer = null;
+  function has(key) { for (var i = 0; i < stack.length; i++) if (stack[i].key === key) return true; return false; }
+  // 窓を開いた／画面を進めたときに呼ぶ。fn = 戻るボタンで行う「閉じる／前の画面へ」
+  // key＝どの窓・画面か。同じ key がもう積んであれば二重に積まない（重ねる=true のときだけ何段でも積む）
+  function push(fn, key, 重ねる) {
+    if (key && !重ねる && has(key)) return;
+    stack.push({ fn: fn, key: key });
+    history.pushState({ modoru: stack.length }, '');
+  }
+  // ×ボタンなどコードで閉じたときに呼ぶ（その key で積んだ履歴を消す）。
+  // ★戻るボタンで閉じた分はもう stack から抜けているので、閉じる処理の中から呼んでも何もしない
+  function done(key) {
+    var n = 0;
+    if (key === undefined) { if (stack.length) { stack.pop(); n = 1; } }
+    else { for (var i = stack.length - 1; i >= 0; i--) if (stack[i].key === key) { stack.splice(i, 1); n++; } }
+    消す(n);
+  }
+  // 全部まとめて閉じたとき（中身をぜんぶ隠す_）
+  function clear() { var n = stack.length; stack = []; 消す(n); }
+  // 続けて閉じたときに history.back() を何度も呼ぶと端末によって1回にまとめられてずれるので、まとめて1回で戻す
+  function 消す(n) {
+    if (!n) return;
+    pend += n;
+    if (timer) return;
+    timer = setTimeout(function () { var k = pend; pend = 0; timer = null; skip++; history.go(-k); }, 0);
+  }
+  window.addEventListener('popstate', function () {
+    if (skip > 0) { skip--; return; }
+    var e = stack.pop(); if (e) e.fn();
+  });
+  // 背景（el自身）を押して離したときだけ fn
+  function outside(el, fn) {
+    var downOnBg = false;
+    el.addEventListener('pointerdown', function (e) { downOnBg = (e.target === el); });
+    el.addEventListener('click', function (e) { if (downOnBg && e.target === el) fn(); downOnBg = false; });
+  }
+  return { push: push, done: done, clear: clear, outside: outside };
+})();
+
 /**
  * 入れなかった・合言葉が切れていたときに、**本文を持つ画面をまとめて閉じる**。
  * ⚠ 2026-09-08（画面6）＝つながらなかったときだけこの後片づけをしていた。
@@ -885,6 +926,7 @@ window.addEventListener('load', function(){
  *   ログイン画面の上に**前の本文が残る**道があった。同じ後片づけを通す。
  */
 function 中身をぜんぶ隠す_(){
+  Modoru.clear();   // 戻る（2026-11-02）：積んだ履歴もまとめて消す
   端末の控えを消す_();
   ST.token = null;
   ST.一覧 = [];
@@ -1156,6 +1198,7 @@ function openPost(){
   var _pl = document.getElementById('postFileList'); if(_pl) _pl.textContent = '';
   var _pp = document.getElementById('postProgress'); if(_pp) _pp.textContent = '';
   document.getElementById('postPage').classList.remove('hide');
+  Modoru.push(function(){ closePage('postPage'); }, 'postPage');   // 戻る（2026-11-02）
   setTimeout(function(){ document.getElementById('postBody').focus(); }, 100);
   名簿をそっと取り直す();
 }
@@ -1185,7 +1228,12 @@ function 名簿をそっと取り直す(){
     }
   }).catch(function(){});   // つながらなくても、いまの名簿のまま書ける
 }
-function closePage(id){ document.getElementById(id).classList.add('hide'); }
+function closePage(id){
+  // 戻る（2026-11-02）：←戻る で閉じたときは積んだ履歴を消す（戻るボタンで閉じた分は何もしない）
+  Modoru.done(id);
+  if(id === 'adminPage') Modoru.done('admTab');
+  document.getElementById(id).classList.add('hide');
+}
 /**
  * その時刻（0時からの分）が日勤かどうか。
  * ★サーバーの 日勤か_ と**同じ中身にしておくこと**（B5・B6・2026-08-19）。
@@ -1503,6 +1551,7 @@ function openDetail(id, 済ませた文){
   document.getElementById('detailBody').innerHTML = '<div class="loading">読み込み中…</div>';
   show('detailMsg','');
   document.getElementById('detailPage').classList.remove('hide');
+  Modoru.push(function(){ closeDetail(); }, 'detailPage');   // 戻る（2026-11-02）。開き直しでは二重に積まない
   var 手元 = 手元の詳細_(id);
   if(手元){ renderDetail(手元); show('detailMsg','最新を確認しています…','ok'); }
   call('詳細取得', ST.token, id).then(function(r){
@@ -1805,6 +1854,7 @@ function 窓を開く_(題, 説明, 欄たち, OKの文字, ひとつだけ){
     }
     document.getElementById('askBody').innerHTML = h;
     document.getElementById('askBox').classList.remove('hide');
+    Modoru.push(function(){ 窓を閉じる_(null); }, 'askBox');   // 戻る（2026-11-02）＝キャンセルと同じ。開き直しでは二重に積まない
     窓の答え_ = 答える;
     var 最初 = document.getElementById('askF0');
     if(最初) setTimeout(function(){ try { 最初.focus(); } catch(e){} }, 30);
@@ -1815,6 +1865,7 @@ function 窓のエラー_(文){
   e.textContent = 文; e.className = 'ask-err';
 }
 function 窓を閉じる_(答え){
+  Modoru.done('askBox');   // 戻る（2026-11-02）
   document.getElementById('askBox').classList.add('hide');
   var 返す = 窓の答え_; 窓の答え_ = null;
   if(返す) 返す(答え);
@@ -1856,7 +1907,9 @@ function どうしても知らせる_(題, 文){
   if(!箱) return;
   document.getElementById('askOk').onclick = function(){ 窓のOK_(); };
   document.getElementById('askNg').onclick = function(){ 窓を閉じる_(null); };
-  箱.addEventListener('click', function(e){ if(e.target === 箱) 窓を閉じる_(null); });
+  // 窓の外で閉じる（2026-11-02）：窓の中で文字を選んで外で離したときに閉じないよう、押した所と離した所の両方を見る。
+  //   ★入力欄のある窓（職員の追加・訂正・PIN再発行など）は外を押しても閉じない＝書いた内容が消えるため
+  Modoru.outside(箱, function(){ if(!窓の欄_.length) 窓を閉じる_(null); });
   document.addEventListener('keydown', function(e){
     if((e.key === 'Escape' || e.keyCode === 27) && 窓の答え_) 窓を閉じる_(null);
   });
@@ -1953,7 +2006,10 @@ function doHide(){
 }
 
 // ===== 検索 =====
-function openSearch(){ document.getElementById('searchPage').classList.remove('hide'); }
+function openSearch(){
+  document.getElementById('searchPage').classList.remove('hide');
+  Modoru.push(function(){ closePage('searchPage'); }, 'searchPage');   // 戻る（2026-11-02）
+}
 function clearSearch(){
   ['sUser','sTarget','sFrom','sTo','sWord','sShift','sLevel','sCat'].forEach(function(id){
     document.getElementById(id).value='';
@@ -1984,6 +2040,7 @@ function doSearch(){
   btn.disabled = true; btn.textContent = '検索中…';
   document.getElementById('resultList').innerHTML = '<div class="loading">検索中…</div>';
   document.getElementById('resultPage').classList.remove('hide');
+  Modoru.push(function(){ closePage('resultPage'); }, 'resultPage');   // 戻る（2026-11-02）
   call('検索', ST.token, cond).then(function(r){
     btn.disabled = false; btn.textContent = '検索する';
     document.getElementById('resultTitle').textContent = '検索結果 ' + r.items.length + '件';
@@ -2000,8 +2057,22 @@ function doSearch(){
 }
 
 // ===== メニュー・管理 =====
-function openMenu(){ document.getElementById('menuPage').classList.remove('hide'); }
-function openAdmin(){ document.getElementById('adminPage').classList.remove('hide'); setAdm('staff'); }
+function openMenu(){
+  document.getElementById('menuPage').classList.remove('hide');
+  Modoru.push(function(){ closePage('menuPage'); }, 'menuPage');   // 戻る（2026-11-02）
+}
+function openAdmin(){
+  document.getElementById('adminPage').classList.remove('hide');
+  Modoru.push(function(){ closePage('adminPage'); }, 'adminPage');   // 戻る（2026-11-02）
+  setAdm('staff');
+}
+// 戻る（2026-11-02）：管理画面のタブを押して移ったときだけ、戻るで前のタブへ戻れるようにする
+//   （処理のあとに setAdm を呼ぶところは積まない＝押して移ったぶんだけ）
+function 管理タブを押した_(t){
+  var 前 = 管理のいまのタブ_;
+  if(前 && 前 !== t) Modoru.push(function(){ setAdm(前); }, 'admTab', true);
+  setAdm(t);
+}
 // ===== 管理画面のタブを「押した瞬間に出す」ための控え（2026-08-20）=====
 //  ・控えはメモリだけ（画面を閉じたら消える）。共有端末に本文を残さないため
 //  ・押した瞬間に前回の中身を出し、そのうしろで必ず取り直して入れ替える
